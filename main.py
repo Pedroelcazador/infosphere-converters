@@ -114,4 +114,8 @@ def main() -> None:
 
 
 if __name__ == '__main__':
+    if '--web' in sys.argv:
+        from web_ui import start
+        start()
+        sys.exit(0)
     main()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Versie: 2026-03-01 12:00
+# Versie: 2026-03-03 15:00
 """
 IBM InfoSphere Data Architect — LDM XML → Markdown + interactieve ERD (HTML)
 
@@ -342,7 +342,16 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
   }}
   #toolbar h1 {{ font-size:13px; color:#cce0f5; flex:1; font-weight:400; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
   #toolbar h1 strong {{ color:#fff; font-weight:700; }}
-  #attr-mode {{ font-size:11px; color:#a8cce8; padding:0 8px; border-left:1px solid rgba(255,255,255,0.2); white-space:nowrap; }}
+  /* ── Attribuutmodus-knoppen ── */
+  #attr-mode-group {{ display:flex; gap:4px; align-items:center; border-left:1px solid rgba(255,255,255,0.2); padding-left:10px; flex-shrink:0; }}
+  #attr-mode-group span {{ font-size:10px; color:#a8cce8; margin-right:2px; white-space:nowrap; }}
+  .mode-btn {{
+    padding:4px 9px; border-radius:4px; border:1.5px solid rgba(255,255,255,0.3);
+    background:rgba(255,255,255,0.08); color:rgba(255,255,255,0.7); cursor:pointer;
+    font-size:11px; font-family:inherit; font-weight:600; white-space:nowrap;
+  }}
+  .mode-btn:hover {{ background:rgba(255,255,255,0.18); color:#fff; }}
+  .mode-btn.active {{ background:rgba(255,255,255,0.28); color:#fff; border-color:rgba(255,255,255,0.75); }}
   #legend {{ display:flex; gap:14px; align-items:center; font-size:11px; color:#cce0f5; flex-shrink:0; }}
   .leg {{ display:flex; align-items:center; gap:5px; }}
   .leg-solid {{ width:22px; height:2px; background:#fff; border-radius:1px; }}
@@ -413,8 +422,8 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
   .entity-name {{ font-size:12px; font-weight:700; color:#fff; }}
   .entity-label {{ font-size:9px; color:#99c5e8; margin-top:2px; font-family:'Courier New',monospace; }}
 
-  .entity-attrs {{ padding:2px 0; max-height:0; overflow:hidden; transition:max-height 0.3s ease; }}
-  .entity.expanded .entity-attrs {{ max-height:600px; overflow-y:auto; }}
+  .entity-attrs {{ padding:2px 0; overflow:hidden; }}
+  .entity-attrs.collapsed {{ max-height:0 !important; }}
 
   .attr-section-label {{
     font-size:9px; font-weight:700; color:#005b9a;
@@ -476,7 +485,12 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
 <div id="toolbar">
   <div id="uwv-logo">UWV</div>
   <h1><strong>{model_name}</strong> — Logisch Datamodel ERD</h1>
-  <div id="attr-mode">{attr_mode_label}</div>
+  <div id="attr-mode-group">
+    <span>Attrs:</span>
+    <button class="mode-btn {mode_none_active}"  onclick="setMode('none')"  title="Alleen entiteitsnamen, geen attributen">None</button>
+    <button class="mode-btn {mode_keys_active}"  onclick="setMode('keys')"  title="Alleen PK- en FK-attributen">Keys</button>
+    <button class="mode-btn {mode_all_active}"   onclick="setMode('all')"   title="Alle attributen inclusief DIM-meta">All</button>
+  </div>
   <div id="legend">
     <div class="leg"><div class="leg-solid"></div><span>Non-identifying</span></div>
     <div class="leg"><div class="leg-dashed"></div><span>Identifying</span></div>
@@ -487,7 +501,6 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
     <div id="search-results"></div>
   </div>
   <button class="btn" onclick="resetLayout()">↺ Reset</button>
-  <button class="btn" onclick="toggleAllExpand()">⊞ Attributen</button>
   <button class="btn" onclick="fitView()">⊡ Fit</button>
 </div>
 
@@ -499,7 +512,7 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
 <div id="minimap"><canvas id="mm-canvas"></canvas><div id="mm-viewport"></div></div>
 
 <script>
-const SHOW_META  = {show_meta};
+let   ATTR_MODE  = '{init_mode}';   // 'none' | 'keys' | 'all'
 const ENTITIES   = {entities_json};
 const RELS       = {rels_json};
 const INIT_POS   = {positions_json};
@@ -565,25 +578,35 @@ function makeEnt(e) {{
   // Attribuutblok
   const ad = document.createElement('div');
   ad.className = 'entity-attrs';
-  const funcAttrs = e.attrs.filter(a => !a.meta);
-  const metaAttrs = e.attrs.filter(a => a.meta);
-  funcAttrs.forEach(a => ad.appendChild(makeAttrRow(a)));
-  if (SHOW_META && metaAttrs.length) {{
-    const lbl = document.createElement('div');
-    lbl.className = 'attr-section-label';
-    lbl.textContent = 'DIM / bitemporale velden';
-    ad.appendChild(lbl);
-    metaAttrs.forEach(a => ad.appendChild(makeAttrRow(a, true)));
-  }}
+  ad.dataset.entId = e.id;
+  renderAttrs(ad, e);
   el.appendChild(ad);
 
   // Toggle knop
   const tog = document.createElement('div');
   tog.className = 'toggle-btn';
-  tog.textContent = '▾ attributen tonen';
+  tog.textContent = ATTR_MODE !== 'none' ? '▴ verbergen' : '▾ attributen tonen';
   tog.addEventListener('click', () => {{
-    el.classList.toggle('expanded');
-    tog.textContent = el.classList.contains('expanded') ? '▴ verbergen' : '▾ attributen tonen';
+    if (ad._expanded) {{
+      ad._expanded = false;
+      renderAttrs(ad, e);
+      tog.textContent = ad.classList.contains('collapsed') ? '▾ attributen tonen' : '▴ verbergen';
+    }} else {{
+      ad._expanded = true;
+      ad.classList.remove('collapsed');
+      while (ad.firstChild) ad.removeChild(ad.firstChild);
+      const funcA = e.attrs.filter(a => !a.meta);
+      const metaA = e.attrs.filter(a => a.meta);
+      funcA.forEach(a => ad.appendChild(makeAttrRow(a)));
+      if (metaA.length) {{
+        const lbl = document.createElement('div');
+        lbl.className = 'attr-section-label';
+        lbl.textContent = 'DIM / bitemporale velden';
+        ad.appendChild(lbl);
+        metaA.forEach(a => ad.appendChild(makeAttrRow(a, true)));
+      }}
+      tog.textContent = '▴ verbergen';
+    }}
     setTimeout(() => {{ draw(); drawMinimap(); }}, 320);
   }});
   el.appendChild(tog);
@@ -598,6 +621,58 @@ function makeEnt(e) {{
 
   drag(el, e.id, hdr);
   canvas.appendChild(el);
+}}
+
+// ── Attribuutmodus ────────────────────────────────────────────────────────
+function renderAttrs(container, e) {{
+  while (container.firstChild) container.removeChild(container.firstChild);
+  if (ATTR_MODE === 'none') return;
+
+  const visibleAttrs = e.attrs.filter(a => {{
+    if (ATTR_MODE === 'keys') return a.pk || a.fk;
+    return true;  // 'all'
+  }});
+
+  const funcAttrs = visibleAttrs.filter(a => !a.meta);
+  const metaAttrs = visibleAttrs.filter(a => a.meta);
+
+  funcAttrs.forEach(a => container.appendChild(makeAttrRow(a)));
+  if (ATTR_MODE === 'all' && metaAttrs.length) {{
+    const lbl = document.createElement('div');
+    lbl.className = 'attr-section-label';
+    lbl.textContent = 'DIM / bitemporale velden';
+    container.appendChild(lbl);
+    metaAttrs.forEach(a => container.appendChild(makeAttrRow(a, true)));
+  }}
+}}
+
+function setMode(mode) {{
+  ATTR_MODE = mode;
+  // Knop-styling updaten
+  document.querySelectorAll('.mode-btn').forEach(btn => {{
+    btn.classList.toggle('active', btn.getAttribute('onclick').includes("'" + mode + "'"));
+  }});
+  // Alle entiteiten opnieuw renderen
+  ENTITIES.forEach(e => {{
+    const ad = document.querySelector('.entity-attrs[data-ent-id="' + e.id + '"]');
+    if (ad) renderAttrs(ad, e);
+  }});
+  ENTITIES.forEach(e => {{
+    const el  = document.getElementById('ent_' + e.id);
+    const ad  = el?.querySelector('.entity-attrs');
+    const tog = el?.querySelector('.toggle-btn');
+    if (!el || !ad || !tog) return;
+    ad._expanded = false;
+    ad._userCollapsed = false;
+    if (mode === 'none') {{
+      ad.classList.add('collapsed');
+      tog.textContent = '▾ attributen tonen';
+    }} else {{
+      ad.classList.remove('collapsed');
+      tog.textContent = '▴ verbergen';
+    }}
+  }});
+  setTimeout(() => {{ draw(); drawMinimap(); }}, 50);
 }}
 
 function makeAttrRow(a, isMeta=false) {{
@@ -821,15 +896,7 @@ function resetLayout() {{
 }}
 
 function toggleAllExpand() {{
-  allExp = !allExp;
-  ENTITIES.forEach(e => {{
-    const el  = document.getElementById('ent_' + e.id);
-    const tog = el?.querySelector('.toggle-btn');
-    if (!el || !tog) return;
-    if (allExp) {{ el.classList.add('expanded');    tog.textContent='▴ verbergen'; }}
-    else        {{ el.classList.remove('expanded'); tog.textContent='▾ attributen tonen'; }}
-  }});
-  setTimeout(() => {{ draw(); drawMinimap(); }}, 320);
+  if (ATTR_MODE === 'none') setMode('keys');
 }}
 
 function fitView() {{
@@ -1018,6 +1085,7 @@ def render_erd(model: dict, all_attrs: bool) -> str:
                 'pk':    a['pk'],
                 'sk':    a['surrogate'],
                 'meta':  a['dim_meta'],
+                'fk':    any(a['name'] in fk['name'] for fk in e['fks']),
                 'desc':  a['description'][:150] + ('…' if len(a['description']) > 150 else ''),
             })
         ent_list.append({
@@ -1058,13 +1126,15 @@ def render_erd(model: dict, all_attrs: bool) -> str:
     import hashlib
     model_key = hashlib.md5(model_name.encode()).hexdigest()[:12]
 
-    attr_mode_label = 'Attributen: alle (incl. DIM-meta)' if all_attrs else 'Attributen: alleen functioneel'
+    init_mode = 'all' if all_attrs else 'keys'
 
     html = ERD_TEMPLATE.format(
-        model_name      = model_name,
-        model_key       = model_key,
-        attr_mode_label = attr_mode_label,
-        show_meta       = 'true' if all_attrs else 'false',
+        model_name       = model_name,
+        model_key        = model_key,
+        init_mode        = init_mode,
+        mode_none_active = 'active' if init_mode == 'none' else '',
+        mode_keys_active = 'active' if init_mode == 'keys' else '',
+        mode_all_active  = 'active' if init_mode == 'all'  else '',
         entities_json   = json.dumps(ent_list,  ensure_ascii=False),
         rels_json       = json.dumps(rels_list, ensure_ascii=False),
         positions_json  = json.dumps(pos_by_id, ensure_ascii=False),
