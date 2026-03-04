@@ -27,6 +27,7 @@ ROOT_DIR   = Path(__file__).resolve().parent
 INPUT_DIR  = ROOT_DIR / 'input'
 OUTPUT_DIR = ROOT_DIR / 'output'
 PORT       = 8080
+MAX_PORT   = 8099  # zoekbereik: 8080–8099
 MAX_UPLOAD = 50 * 1024 * 1024  # 50 MB
 
 sys.path.insert(0, str(ROOT_DIR))
@@ -286,9 +287,22 @@ UI_HTML = (ROOT_DIR / 'web_ui_template.html').read_text(encoding='utf-8')
 # ---------------------------------------------------------------------------
 # Server starten
 # ---------------------------------------------------------------------------
+def _find_free_port(start: int = PORT, end: int = MAX_PORT) -> int:
+    import socket
+    for port in range(start, end + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("localhost", port))
+                return port
+            except OSError:
+                continue
+    raise OSError(f"Geen vrije poort gevonden tussen {start} en {end}.")
+
+
 def start(port: int = PORT):
     INPUT_DIR.mkdir(exist_ok=True)
     OUTPUT_DIR.mkdir(exist_ok=True)
+    port = _find_free_port(port)
     server = HTTPServer(("localhost", port), Handler)
     url = f"http://localhost:{port}"
     print(f"\n  Infosphere Converters - Web UI")

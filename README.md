@@ -21,13 +21,21 @@ Dubbelklik op **`start.bat`**. De webinterface opent automatisch in **Microsoft 
 
 > **Opmerking:** de software opent altijd Edge, ook als Internet Explorer als standaardbrowser is ingesteld. Edge moet geïnstalleerd zijn op de machine.
 
+### Linux / Crostini
+
+```bash
+./start.sh
+```
+
+Of zonder uitvoerrechten: `bash start.sh`.
+
 ### Handmatig
 
 ```bash
 python3 web_ui.py
 ```
 
-De server start op `http://localhost:8080` en opent de browser automatisch. Op Windows wordt altijd Microsoft Edge gebruikt.
+De server start op `http://localhost:8080` (of de eerstvolgende vrije poort tot 8099) en opent de browser automatisch. Op Windows wordt altijd Microsoft Edge gebruikt.
 
 ---
 
@@ -160,6 +168,7 @@ Interactief data-lineage diagram:
 ```
 infosphere-converters/
   start.bat            ← Windows startscript (geen terminalvenster)
+  start.sh             ← Linux/Crostini startscript
   web_ui.py            ← webinterface, aanbevolen startpunt
   main.py              ← optioneel commandoregelinterface
   md_to_html.py        ← gedeelde module (Markdown → HTML)
