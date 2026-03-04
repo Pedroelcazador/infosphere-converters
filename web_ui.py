@@ -294,7 +294,13 @@ def start(port: int = PORT):
     print(f"\n  Infosphere Converters - Web UI")
     print(f"  {url}")
     print(f"  Ctrl+C om te stoppen\n")
-    threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+    def _open_browser(url):
+        if sys.platform == "win32":
+            import subprocess
+            subprocess.Popen(["cmd", "/c", "start", "msedge", url])
+        else:
+            webbrowser.open(url)
+    threading.Timer(0.8, lambda: _open_browser(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
