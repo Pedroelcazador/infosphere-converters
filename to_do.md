@@ -1,6 +1,6 @@
 # To-do: verbeterpunten Infosphere Converters
 
-Bijgewerkt op 2026-03-04 (item 7 opgelost).
+Bijgewerkt op 2026-03-04 (items 8, 9, 11 opgelost; item 12 toegevoegd).
 
 ---
 
@@ -104,6 +104,38 @@ Er is geen test-suite. Converters zijn complexe transformaties waarbij regressie
 
 ---
 
+## Uitbreiding
+
+### 12. DataStage Linter (ds_linter.py)
+**Bestand:** nieuw — `ds_linter/ds_linter.py`
+
+Nieuwe module die actieve kwaliteitscontroles (QA) uitvoert op geëxporteerde DataStage XML-bestanden en een HTML-rapport genereert.
+
+**Architectuur:**
+- Laadt parsing-logica uit `ds_convert.py` via `importlib` (zoals `ds_flow.py` dat doet)
+- Rule-engine: elke check retourneert `Pass / Warning / Critical` + toelichting
+- Output: `<naam>_QAReport.html`
+- Registratie in `converters.py` als `file_type: 'dsexport'`, tab-label `QA Rapport`
+
+**Initiële checks (nog uit te breiden — eerst volledige lijst verzamelen):**
+
+| # | Niveau | Check |
+|---|---|---|
+| C1 | Kritiek | Oracle Target WriteMode = 6 (BULK LOAD) |
+| C2 | Kritiek | FailOnRowErrorPX niet op 0/False — geruisloos weggooien is integriteitsrisico; default-waarde eerst verifiëren |
+| C3 | Waarschuwing | ≥ 4 TransformerStage/PxTransformer per parallel job — adviseer Copy of Modify |
+| C4 | Waarschuwing | ROOT-record mist Description / FullDescription |
+| C5 | Waarschuwing | Stagenamen volgen geen prefix-conventie (`orc_`, `trn_`, `agg_`, `jnr_`) — configureerbaar maken |
+| C6 | Waarschuwing | Ontkoppelde stages zonder input- of output-verbinding (wees-stages) |
+
+**Openstaande vragen vóór implementatie:**
+- Wat is de DataStage-default van `FailOnRowErrorPX` bij ontbrekende property?
+- Is WriteMode=9 (UPSERT/MERGE) ook acceptabel voor C1, of altijd kritiek?
+- Drempel C3: is 4 transformers de juiste grens, of liever op derivations per transformer?
+- Welke aanvullende checks zijn relevant? (lijst verzamelen vóór start)
+
+---
+
 ## Overzicht
 
 | # | Prioriteit | Bestand | Omschrijving | Status |
@@ -119,3 +151,4 @@ Er is geen test-suite. Converters zijn complexe transformaties waarbij regressie
 | 9 | Laag | meerdere bestanden | `make_anchor()` duplicatie | ✅ Opgelost |
 | 10 | Laag | `web_ui.py` | List comprehension als statement | ✅ Opgelost |
 | 11 | Laag | — | Geen tests | ✅ Opgelost |
+| 12 | Uitbreiding | `ds_linter/ds_linter.py` | DataStage Linter / QA-rapport | ⏳ Checklist verzamelen |
