@@ -14,6 +14,8 @@ import re, html as htmllib, sys, logging, json
 from collections import deque
 from pathlib import Path
 
+sys.modules.pop('ds_convert', None)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'ds_convert'))
 import ds_convert as ds
 
 SCRIPT_DIR = Path(__file__).resolve().parent

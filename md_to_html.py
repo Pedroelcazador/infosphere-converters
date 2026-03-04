@@ -492,7 +492,8 @@ def md_to_html(md_text: str, title: str = 'DIM Documentatie') -> str:
             list_lines = [line]; j = i + 1
             while j < len(lines) and re.match(r'^[\s]*[-*]\s+', lines[j]):
                 list_lines.append(lines[j]); j += 1
-            items = [f'<li>{_inline(re.sub(r"^[\\s]*[-*]\\s+", "", ll))}</li>' for ll in list_lines]
+            _list_pat = re.compile(r'^[\s]*[-*]\s+')
+            items = [f'<li>{_inline(_list_pat.sub("", ll))}</li>' for ll in list_lines]
             body_parts.append('<ul>' + ''.join(items) + '</ul>'); i = j; continue
         if not line.strip(): i += 1; continue
         if re.match(r'^\s*<[a-zA-Z/]', line):

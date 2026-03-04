@@ -23,7 +23,8 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR   = SCRIPT_DIR.parent
 OUTPUT_DIR = ROOT_DIR / 'output'
-sys.path.insert(0, str(SCRIPT_DIR))
+sys.modules.pop('msl_convert', None)
+sys.path.insert(0, str(ROOT_DIR / 'msl_convert'))
 
 try:
     from msl_convert import (
@@ -32,7 +33,7 @@ try:
     )
     from xml.etree import ElementTree as ET
 except ImportError as e:
-    print(f"Fout: msl_convert.py niet gevonden in {SCRIPT_DIR}\n{e}")
+    print(f"Fout: msl_convert.py niet gevonden in {ROOT_DIR / 'msl_convert'}\n{e}")
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
@@ -216,7 +217,7 @@ svg#lines {{ position:absolute; top:0; left:0; pointer-events:none; overflow:vis
 .col-label {{
   position:absolute; font-size:11px; font-weight:700; color:#5580a0;
   text-transform:uppercase; letter-spacing:1px; pointer-events:none;
-  top:-28px;
+  top:-28px; white-space:nowrap;
 }}
 
 /* ── Kaarten ──────────────────────────────────────────── */
@@ -868,12 +869,16 @@ function fitView() {{
 
 // ── Kolom-labels ──────────────────────────────────────────────────────────────
 function locLabel(path) {{
-  // '/OKV WWO/OKV WWO.ldm' → 'OKV WWO'
-  // '/WW_INT WWO/INT URS WW.ldm' → 'INT URS WW'
   if (!path || path === '?') return 'Bronnen';
-  const parts = path.split('/').filter(Boolean);
-  const last  = parts[parts.length - 1] || '';
-  return last.replace(/\.ldm$/i, '') || parts[0] || path;
+  const labels = path.split(',')
+    .map(p => {{
+      p = p.trim();
+      const parts = p.split('/').filter(Boolean);
+      const last  = parts[parts.length - 1] || '';
+      return last.replace(/\.ldm$/i, '') || parts[0] || p;
+    }})
+    .filter((v, i, a) => v && a.indexOf(v) === i);
+  return labels.join(' / ') || path;
 }}
 
 function addColLabels() {{

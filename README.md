@@ -1,90 +1,66 @@
 # Infosphere Converters
 
-Convert IBM InfoSphere DataStage exports and IBM Data Architect LDM/MSL files to readable Markdown documentation and interactive HTML visualizations.
+Toolkit voor het omzetten van IBM InfoSphere DataStage- en IBM Data Architect-exportbestanden naar leesbare documentatie en interactieve HTML-visualisaties.
 
-## Achtergrond
-
-IBM InfoSphere exporteert jobs en datamodellen in XML-formaten die niet direct leesbaar zijn voor een breed publiek. Deze toolset zet die exports automatisch om naar:
-
-- **Markdown** — voor snel overzicht en delen met collega's of AI-tools
-- **HTML** — interactieve diagrammen en documentatie met sidebar-navigatie, syntax highlighting en klikbare details
-
-De tools zijn ontwikkeld voor het DIM-team bij UWV en zijn gericht op ETL-engineers, informatieanarchitecten en testers.
+Ontwikkeld voor het DIM-team bij UWV, gericht op ETL-engineers, informatiearchitecten en testers.
 
 ---
 
 ## Vereisten
 
 - Python 3.10 of hoger
-- Geen externe packages — alleen de Python standaardbibliotheek
+- Geen externe packages — uitsluitend de Python standaardbibliotheek
 
 ---
 
-## Installatie
+## Starten
+
+### Windows (aanbevolen)
+
+Dubbelklik op **`start.bat`**. De webinterface opent automatisch in de browser. Er verschijnt geen terminalvenster.
+
+### Handmatig
 
 ```bash
-git clone https://github.com/Pedroelcazador/infosphere-converters.git
-cd infosphere-converters
+python3 web_ui.py
 ```
 
-Klaar. Geen installatiestap nodig.
+De server start op `http://localhost:8080` en opent de browser automatisch.
 
 ---
 
-## Gebruik
+## Web Interface
 
-1. Zet je inputbestand in de `input/` map
-2. Start het hoofdmenu:
+De web interface is de aanbevolen manier om de toolkit te gebruiken.
 
-```bash
-python3 main.py
-```
+### Een bestand converteren
 
-3. Kies een conversie uit het menu
-4. De output verschijnt in de `output/` map
+1. Sleep een inputbestand naar het dropveld, of klik om een bestand te kiezen
+2. De conversie start automatisch — afhankelijk van het bestandstype worden de juiste converters uitgevoerd
+3. De resultaten verschijnen als tabbladen in het uitvoerpaneel
 
-```
-══════════════════════════════════════════════════
-  Infosphere Converters
-══════════════════════════════════════════════════
-  1.  DataStage → Documentatie (Markdown + HTML)
-  2.  DataStage → Sequencer flowdiagram (HTML)
-  3.  DataStage → Job dataflow diagram (HTML)
-  4.  LDM → Datamodel (Markdown + HTML + ERD)
-  5.  MSL → Attribuutmapping (Markdown + HTML)
-  6.  MSL → Lineage diagram (HTML)
-  0.  Afsluiten
-──────────────────────────────────────────────────
-  📄 Input: mijn_export.xml
-──────────────────────────────────────────────────
-  Keuze:
-```
+Ondersteunde bestandstypen:
 
----
+| Bestand | Herkend als | Tabbladen |
+|---|---|---|
+| DSExport XML (`<DSExport>`) | DataStage | Documentatie · Flow · Job Flow |
+| LDM XML (`logicalModelElement`) | Logisch datamodel | ERD · Datamodel |
+| MSL-bestand (`.msl`) | Attribuutmapping | Mapping · Lineage |
 
-## Mappenstructuur
+### Knoppen
 
-```
-infosphere-converters/
-  main.py              ← hoofdmenu, start hier
-  md_to_html.py        ← gedeelde module (Markdown → HTML)
-  input/               ← zet hier je inputbestand (één tegelijk)
-  output/              ← alle gegenereerde bestanden
-  ds_convert/
-    ds_convert.py
-  ds_flow/
-    ds_flow.py
-  ds_job_flow/
-    ds_job_flow.py
-  ldm_convert/
-    ldm_convert.py
-  msl_convert/
-    msl_convert.py
-  msl_lineage/
-    msl_lineage.py
-```
+| Knop | Functie |
+|---|---|
+| **↗ Nieuw venster** | Opent het actieve tabblad in een apart browservenster |
+| **📦 Download zip** | Download alle outputbestanden van de huidige sessie als zip |
+| **⬇ Opslaan** | Download het actieve tabblad als losse HTML |
+| **🗑 Nieuwe sessie** | Wist de inputmap zodat een nieuw bestand kan worden geüpload |
+| **? Help** | Opent deze documentatie in een apart venster |
 
-Logbestanden worden per script bijgehouden in de scriptmap (bijv. `ds_convert/ds_convert.log`).
+### Beperkingen
+
+- Upload slechts **één bestand tegelijk**. Bij meerdere bestanden geeft de interface een foutmelding.
+- Staat er nog een bestand in de inputmap van een vorige sessie? Gebruik dan eerst **Nieuwe sessie**.
 
 ---
 
@@ -92,10 +68,11 @@ Logbestanden worden per script bijgehouden in de scriptmap (bijv. `ds_convert/ds
 
 ### 1. `ds_convert` — DataStage documentatie
 
-**Input:** IBM DataStage DSExport XML (`.xml`, root element `<DSExport>`)  
+**Input:** IBM DataStage DSExport XML (`.xml`)
 **Output:** `<naam>_DataStage.md` + `<naam>_DataStage.html`
 
 Genereert volledige tekstuele documentatie van alle jobs in een DSExport:
+
 - Sequencer-jobs en parallel jobs met beschrijving, parameters en stages
 - Oracle Connector details: SQL-queries, tabelinformatie, write mode
 - Wijzigingshistorie per job
@@ -105,10 +82,11 @@ Genereert volledige tekstuele documentatie van alle jobs in een DSExport:
 
 ### 2. `ds_flow` — Sequencer flowdiagram
 
-**Input:** IBM DataStage DSExport XML  
+**Input:** IBM DataStage DSExport XML
 **Output:** `<naam>_Flow.html`
 
 Interactief flowdiagram per sequencer-job:
+
 - OK (groen) / NOK (rood) / onvoorwaardelijk (gestippeld) paden
 - Klik op een job-activiteit voor SQL en tabeldetails van de bijbehorende parallel job
 - Topologische ranking van nodes
@@ -117,10 +95,11 @@ Interactief flowdiagram per sequencer-job:
 
 ### 3. `ds_job_flow` — Job dataflow diagram
 
-**Input:** IBM DataStage DSExport XML  
+**Input:** IBM DataStage DSExport XML
 **Output:** `<jobname>_JobFlow.html`
 
 Interactief dataflow-diagram van de interne structuur van een parallel job:
+
 - Stages gepositioneerd op basis van de originele XY-coördinaten uit het XML
 - Klik op een stage voor SQL, tabelinformatie en kolomdefinities
 
@@ -128,10 +107,11 @@ Interactief dataflow-diagram van de interne structuur van een parallel job:
 
 ### 4. `ldm_convert` — Logisch datamodel
 
-**Input:** IBM Data Architect LDM XML (`.xml`, root element `logicalModelElement`)  
-**Output:** `<modelnaam>_Datamodel.md` + `<modelnaam>_Datamodel.html` + `<modelnaam>_ERD.html`
+**Input:** IBM Data Architect LDM XML (`.xml`)
+**Output:** `<naam>_Datamodel.md` + `<naam>_Datamodel.html` + `<naam>_ERD.html`
 
 Documenteert alle entiteiten en attributen uit een logisch datamodel:
+
 - Attribuuttabel met datatype, PK, verplicht, surrogate key en beschrijving
 - DIM/bitemporale metadata-velden ingeklapt in een uitklapbare sectie
 - Interactief ERD met vier weergavemodi (None / Keys / Functional / All)
@@ -141,10 +121,11 @@ Documenteert alle entiteiten en attributen uit een logisch datamodel:
 
 ### 5. `msl_convert` — Attribuutmapping
 
-**Input:** IBM Data Architect MSL-bestand (`.msl`)  
+**Input:** IBM Data Architect MSL-bestand (`.msl`)
 **Output:** `<naam>_Mapping.md` + `<naam>_Mapping.html`
 
 Converteert een mapping specification naar een leesbare attribuuttabel:
+
 - Mapping-types: direct, concat, join, lookup, constant
 - Filtercondicties en join-condities per doeltabel
 - Notities per attribuutmapping
@@ -153,13 +134,38 @@ Converteert een mapping specification naar een leesbare attribuuttabel:
 
 ### 6. `msl_lineage` — Lineage diagram
 
-**Input:** IBM Data Architect MSL-bestand (`.msl`)  
+**Input:** IBM Data Architect MSL-bestand (`.msl`)
 **Output:** `<naam>_Lineage.html`
 
 Interactief data-lineage diagram:
-- Bronnen links, doeltabellen rechts, verbindingen per attribuut
+
+- Bronnen links, doeltabellen rechts, verbindingslijnen per attribuutmapping
 - Primaire bronnen (direct/concat) en secundaire bronnen (join/lookup) visueel onderscheiden
-- Klik op een verbinding voor attribuutdetails
+- Filter op mapping-type via chips in de toolbar
+- Klik op een kaart of verbinding voor attribuutdetails in een zijpaneel
+
+---
+
+## Mappenstructuur
+
+```
+infosphere-converters/
+  start.bat            ← Windows startscript (geen terminalvenster)
+  web_ui.py            ← webinterface, aanbevolen startpunt
+  main.py              ← optioneel commandoregelinterface
+  md_to_html.py        ← gedeelde module (Markdown → HTML)
+  README.md            ← deze documentatie
+  input/               ← plaats hier het te converteren bestand
+  output/              ← alle gegenereerde bestanden
+  ds_convert/
+  ds_flow/
+  ds_job_flow/
+  ldm_convert/
+  msl_convert/
+  msl_lineage/
+```
+
+Logbestanden worden per converter bijgehouden in de bijbehorende submap (bijv. `ds_convert/ds_convert.log`).
 
 ---
 
@@ -169,9 +175,9 @@ Elk script valideert het inputbestand voordat de conversie start:
 
 | Situatie | Gedrag |
 |---|---|
-| Geen bestand in `input/` | Foutmelding + exit |
-| Meer dan één bestand in `input/` | Foutmelding met bestandsnamen + exit |
-| Verkeerd bestandstype of root-element | Foutmelding met uitleg + exit |
+| Geen bestand in `input/` | Foutmelding + afbreken |
+| Meer dan één bestand in `input/` | Foutmelding met bestandsnamen + afbreken |
+| Verkeerd bestandstype of root-element | Foutmelding met uitleg + afbreken |
 
 ---
 

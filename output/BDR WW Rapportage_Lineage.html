@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<title>BDR WW Rapportage — Lineage</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#eef2f7; font-family:Arial,sans-serif; color:#1a2a3a; overflow:hidden; }
+
+/* ── Toolbar ─────────────────────────────────────────── */
+#toolbar {
+  position:fixed; top:0; left:0; right:0; height:52px; z-index:200;
+  background:#005b9a; display:flex; align-items:center; gap:10px; padding:0 16px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.2);
+}
+#uwv-logo {
+  font-size:18px; font-weight:700; background:#fff; color:#005b9a;
+  padding:2px 9px; border-radius:3px; line-height:1.4; flex-shrink:0;
+}
+#toolbar h1 { font-size:13px; color:#cce0f5; flex:1; font-weight:400; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#toolbar h1 strong { color:#fff; font-weight:700; }
+
+/* Filter-chips */
+#filters { display:flex; gap:6px; align-items:center; flex-shrink:0; }
+.chip {
+  display:flex; align-items:center; gap:5px; padding:4px 9px;
+  border-radius:12px; font-size:11px; font-weight:600; cursor:pointer;
+  border:1.5px solid transparent; transition:opacity .15s;
+}
+.chip input { cursor:pointer; }
+.chip-direct   { background:#1a6fa8; color:#fff; border-color:#1a6fa8; }
+.chip-concat   { background:#e07b00; color:#fff; border-color:#e07b00; }
+.chip-lookup   { background:#6a3fa0; color:#fff; border-color:#6a3fa0; }
+.chip-join     { background:#1a8a50; color:#fff; border-color:#1a8a50; }
+.chip-constant { background:#888; color:#fff; border-color:#888; }
+.chip.off      { opacity:0.35; }
+.sep { width:1px; height:28px; background:rgba(255,255,255,0.2); flex-shrink:0; }
+
+.btn {
+  padding:5px 11px; border-radius:4px; border:1.5px solid rgba(255,255,255,0.35);
+  background:rgba(255,255,255,0.1); color:#fff; cursor:pointer;
+  font-size:12px; font-family:inherit; font-weight:600; white-space:nowrap; flex-shrink:0;
+}
+.btn:hover { background:rgba(255,255,255,0.22); }
+#search {
+  padding:4px 9px; border-radius:4px; border:1.5px solid rgba(255,255,255,0.35);
+  background:rgba(255,255,255,0.12); color:#fff; font-size:12px; width:140px; outline:none;
+}
+#search::placeholder { color:rgba(255,255,255,0.45); }
+#search:focus { background:rgba(255,255,255,0.2); }
+
+/* ── Canvas ───────────────────────────────────────────── */
+#canvas-wrap {
+  position:fixed; top:52px; left:0; right:0; bottom:0; overflow:hidden;
+  background:#eef2f7;
+  background-image:radial-gradient(circle,#c5d5e5 1px,transparent 1px);
+  background-size:22px 22px;
+  cursor:grab;
+}
+#canvas-wrap.panning { cursor:grabbing; }
+#canvas { position:absolute; top:0; left:0; transform-origin:0 0; }
+svg#lines { position:absolute; top:0; left:0; pointer-events:none; overflow:visible; }
+
+/* ── Kolom-labels ─────────────────────────────────────── */
+.col-label {
+  position:absolute; font-size:11px; font-weight:700; color:#5580a0;
+  text-transform:uppercase; letter-spacing:1px; pointer-events:none;
+  top:-28px; white-space:nowrap;
+}
+
+/* ── Kaarten ──────────────────────────────────────────── */
+.card {
+  position:absolute; border-radius:6px; user-select:none;
+  box-shadow:0 2px 8px rgba(0,91,154,0.13);
+  transition:box-shadow .15s, opacity .2s;
+  min-width:200px; max-width:240px;
+}
+.card.src   { border:2px solid #2a7ab8; }
+.card.tgt   { border:2px solid #005b9a; }
+.card.sec   { border:2px solid #8aade0; }   /* secondary bron */
+.card.dimmed { opacity:0.18; }
+.card.highlighted { box-shadow:0 0 0 3px #f5a623, 0 4px 18px rgba(0,0,0,0.18); }
+.card.search-match { box-shadow:0 0 0 3px #2ecc71, 0 4px 18px rgba(0,0,0,0.18); }
+.card:hover { box-shadow:0 4px 18px rgba(0,91,154,0.28); }
+
+.card-header {
+  padding:7px 10px; border-radius:4px 4px 0 0; cursor:pointer;
+}
+.card.src .card-header { background:#2a7ab8; }
+.card.tgt .card-header { background:#005b9a; }
+.card.sec .card-header { background:#6a9fc8; }
+.card.highlighted .card-header { background:#c05000; }
+
+.card-name  { font-size:11px; font-weight:700; color:#fff; }
+.card-sub   { font-size:9px; color:rgba(255,255,255,0.7); margin-top:2px; }
+.card-badge {
+  display:inline-block; font-size:9px; font-weight:700;
+  padding:1px 5px; border-radius:8px; margin-left:6px;
+  background:rgba(255,255,255,0.22); color:#fff;
+}
+
+/* Attribuutlijst in doelkaart */
+.card-attrs { border-top:1px solid rgba(0,0,0,0.06); }
+.attr-row {
+  display:flex; align-items:center; padding:3px 10px; gap:4px;
+  font-size:9.5px; border-bottom:1px solid #e8eff6; cursor:default;
+  transition:background .1s;
+}
+.attr-row:last-child { border-bottom:none; }
+.attr-row:hover { background:#f0f7ff; }
+.attr-row.active { background:#fff3d4; }
+.attr-name { flex:1; color:#223344; }
+.attr-dot {
+  width:8px; height:8px; border-radius:50%; flex-shrink:0;
+}
+.dot-direct   { background:#1a6fa8; }
+.dot-concat   { background:#e07b00; }
+.dot-lookup   { background:#6a3fa0; }
+.dot-join     { background:#1a8a50; }
+.dot-constant { background:#888; }
+.attr-src { font-size:8.5px; color:#7a99bb; white-space:nowrap; max-width:80px; overflow:hidden; text-overflow:ellipsis; }
+
+.card-toggle {
+  display:block; text-align:center; padding:4px; font-size:10px;
+  font-weight:600; color:#005b9a; cursor:pointer;
+  background:#f5f9fd; border-top:1px solid #d0dce8; border-radius:0 0 4px 4px;
+}
+.card-toggle:hover { background:#e4f0fb; }
+
+/* ── Detail panel (rechts) ────────────────────────────── */
+#detail {
+  position:fixed; top:52px; right:0; bottom:0; width:340px;
+  background:#fff; border-left:2px solid #c0d8ee;
+  box-shadow:-4px 0 18px rgba(0,0,0,0.1);
+  transform:translateX(100%); transition:transform .25s ease;
+  z-index:150; display:flex; flex-direction:column; overflow:hidden;
+}
+#detail.open { transform:translateX(0); }
+#detail-header {
+  background:#005b9a; padding:12px 14px; flex-shrink:0;
+  display:flex; align-items:flex-start; gap:8px;
+}
+#detail-title { font-size:12px; font-weight:700; color:#fff; flex:1; }
+#detail-sub { font-size:10px; color:#aac8e8; margin-top:2px; }
+#detail-close {
+  color:rgba(255,255,255,0.7); cursor:pointer; font-size:18px;
+  line-height:1; flex-shrink:0; padding:0 2px;
+}
+#detail-close:hover { color:#fff; }
+#detail-body { flex:1; overflow-y:auto; padding:12px; }
+.detail-section { margin-bottom:14px; }
+.detail-section h4 {
+  font-size:10px; font-weight:700; color:#005b9a;
+  text-transform:uppercase; letter-spacing:.5px;
+  border-bottom:1px solid #dde8f4; padding-bottom:4px; margin-bottom:6px;
+}
+.detail-row {
+  display:flex; gap:6px; margin-bottom:5px; font-size:11px; align-items:flex-start;
+}
+.detail-row .lbl {
+  font-weight:700; color:#334455; flex-shrink:0; min-width:70px;
+}
+.detail-row .val { color:#445566; }
+.detail-note {
+  background:#f8f4e8; border-left:3px solid #e07b00;
+  padding:5px 8px; font-size:10.5px; color:#553300;
+  border-radius:0 3px 3px 0; line-height:1.5; margin-top:4px;
+}
+.detail-tag {
+  display:inline-block; font-size:9px; font-weight:700; padding:1px 6px;
+  border-radius:8px; color:#fff; margin-right:3px;
+}
+.detail-filter-note {
+  background:#eef6ff; border-left:3px solid #2a7ab8;
+  padding:6px 8px; font-size:10.5px; color:#1a3a5a; line-height:1.5;
+  border-radius:0 3px 3px 0; margin-bottom:10px;
+}
+.detail-table { width:100%; border-collapse:collapse; font-size:10.5px; }
+.detail-table th {
+  background:#f0f7ff; color:#005b9a; font-weight:700;
+  padding:4px 7px; text-align:left; border-bottom:1px solid #d0dce8;
+}
+.detail-table td { padding:4px 7px; border-bottom:1px solid #eef2f7; vertical-align:top; }
+.detail-table tr:last-child td { border-bottom:none; }
+.detail-table tr:hover td { background:#f8fbff; }
+
+/* ── Tooltip ──────────────────────────────────────────── */
+#tooltip {
+  position:fixed; background:#1c2c3c; border:1px solid #005b9a;
+  padding:7px 11px; border-radius:4px; font-size:11px; color:#d8eaf8;
+  max-width:280px; pointer-events:none; display:none; z-index:1000;
+  line-height:1.5; box-shadow:0 4px 12px rgba(0,0,0,0.25);
+}
+
+/* ── Info-balk ────────────────────────────────────────── */
+#info-panel {
+  position:fixed; bottom:12px; left:50%; transform:translateX(-50%);
+  background:rgba(0,40,80,0.82); backdrop-filter:blur(4px);
+  border-radius:5px; padding:5px 14px; font-size:11px; color:#cce4f8;
+  z-index:100; white-space:nowrap; pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <div id="uwv-logo">UWV</div>
+  <h1><strong>BDR WW Rapportage</strong> — Data Lineage</h1>
+  <div id="filters">
+    <div class="chip chip-direct"   onclick="toggleType('direct')"  ><input type="checkbox" checked id="chk-direct"  > direct</div>
+    <div class="chip chip-concat"   onclick="toggleType('concat')"  ><input type="checkbox" checked id="chk-concat"  > concat</div>
+    <div class="chip chip-lookup"   onclick="toggleType('lookup')"  ><input type="checkbox" checked id="chk-lookup"  > lookup</div>
+    <div class="chip chip-join"     onclick="toggleType('join')"    ><input type="checkbox" checked id="chk-join"    > join</div>
+    <div class="chip chip-constant" onclick="toggleType('constant')"><input type="checkbox" checked id="chk-constant"> constant</div>
+  </div>
+  <div class="sep"></div>
+  <input id="search" type="text" placeholder="🔍 Zoek tabel…" oninput="doSearch(this.value)">
+  <button class="btn" onclick="resetHighlight()">✕ Reset</button>
+  <button class="btn" onclick="fitView()">⊡ Fit</button>
+</div>
+
+<div id="canvas-wrap">
+  <div id="canvas">
+    <svg id="lines"></svg>
+  </div>
+</div>
+
+<div id="detail">
+  <div id="detail-header">
+    <div style="flex:1">
+      <div id="detail-title">—</div>
+      <div id="detail-sub"></div>
+    </div>
+    <div id="detail-close" onclick="closeDetail()">✕</div>
+  </div>
+  <div id="detail-body"></div>
+</div>
+
+<div id="tooltip"></div>
+<div id="info-panel">Klik op een kaart voor details • Hover over lijn voor attribuutinfo • Scroll = zoom • Sleep canvas = pan</div>
+
+<script>
+// ── Data ────────────────────────────────────────────────────────────────────
+const SOURCES = [{"id": "BDR WW Recht FT", "primary": true, "n_targets": 1, "n_attrs": 58}, {"id": "BDR WW Vaststelling FT", "primary": true, "n_targets": 1, "n_attrs": 16}, {"id": "WW Inkomsten", "primary": true, "n_targets": 1, "n_attrs": 22}, {"id": "BDR WW Nuluitkering DT", "primary": false, "n_targets": 1, "n_attrs": 2}, {"id": "Int Vfv Betaalopdracht Ht", "primary": true, "n_targets": 1, "n_attrs": 108}, {"id": "WW Toekenning", "primary": false, "n_targets": 1, "n_attrs": 24}, {"id": "WW Vaststelling Voorschot", "primary": false, "n_targets": 1, "n_attrs": 20}, {"id": "WW Persoon", "primary": false, "n_targets": 1, "n_attrs": 1}, {"id": "WW Persoonsbeschrijving", "primary": true, "n_targets": 1, "n_attrs": 3}, {"id": "BDR WW Sessie FA", "primary": true, "n_targets": 1, "n_attrs": 4}, {"id": "WW Vaststelling Uitkering", "primary": true, "n_targets": 1, "n_attrs": 28}, {"id": "WW Vaststelling Toeslag", "primary": true, "n_targets": 1, "n_attrs": 4}, {"id": "BDR WW Soort Geval DT", "primary": false, "n_targets": 1, "n_attrs": 3}];
+const TARGETS = [{"id": "BDR WW Rapportage FT", "filter": "", "edges": [{"src_id": "BDR WW Recht FT", "count": 58, "types": ["direct", "lookup"], "attrs": [{"target": "Volgnummer WW Recht", "field": "Volgnummer WW Recht", "type": "direct", "notes": ""}, {"target": "Indicatie Geen Uitkering", "field": "Indicatie Geen Uitkering", "type": "direct", "notes": ""}, {"target": "Indicatie Lopende Toeslag", "field": "Indicatie Lopend Toeslag", "type": "direct", "notes": ""}, {"target": "Indicatie Einde Toeslag", "field": "Indicatie Einde Toeslag", "type": "direct", "notes": ""}, {"target": "Indicatie Verhuisd", "field": "Indicatie Verhuisd", "type": "direct", "notes": ""}, {"target": "Indicatie Export", "field": "Indicatie Export", "type": "direct", "notes": ""}, {"target": "Indicatie STP", "field": "Indicatie STP", "type": "direct", "notes": ""}, {"target": "Indicatie Zelfstandige", "field": "Indicatie Zelfstandige", "type": "direct", "notes": ""}, {"target": "Indicatie Niet Verzekeringsplichtige Arbeid", "field": "Indicatie Niet-Verzekeringsplichtige Arbeid", "type": "direct", "notes": ""}, {"target": "Indicatie Overheid en Onderwijs", "field": "Indicatie Overheid En Onderwijs", "type": "direct", "notes": ""}, {"target": "Dagloon", "field": "Dagloon", "type": "direct", "notes": ""}, {"target": "Dagloon Ongemaximeerd", "field": "Dagloon Ongemaximeerd", "type": "direct", "notes": ""}, {"target": "Gemiddeld Arbeidspatroon", "field": "Gemiddeld Arbeidspatroon", "type": "direct", "notes": ""}, {"target": "Datum Aanvraag", "field": "Datum Aanvraag", "type": "direct", "notes": ""}, {"target": "Datum Aangifte", "field": "Datum Aangifte", "type": "direct", "notes": ""}, {"target": "Datum Polis", "field": "Datum Polis", "type": "direct", "notes": ""}, {"target": "Datum Begin Rechtspecificatie", "field": "Datum Begin Rechtspecificatie", "type": "direct", "notes": ""}, {"target": "Datum Afhandeling", "field": "Datum Afhandeling", "type": "direct", "notes": ""}, {"target": "Datum Eerste WW Dag", "field": "Datum Eerste WW Dag", "type": "direct", "notes": ""}, {"target": "Datum Max Basis 75", "field": "Datum Max Basis 75", "type": "direct", "notes": ""}, {"target": "Datum Max Basis Uitkering", "field": "Datum Max Basis Uitkering", "type": "direct", "notes": ""}, {"target": "Datum Max Max", "field": "Datum Max Max", "type": "direct", "notes": ""}, {"target": "Datum Begin Startperiode Zelfstandigen", "field": "Datum Begin Startperiode Zelfstandigen", "type": "direct", "notes": ""}, {"target": "Datum Einde Startperiode Zelfstandigen", "field": "Datum Einde Startperiode Zelfstandigen", "type": "direct", "notes": ""}, {"target": "Datum Max Export", "field": "Datum Max Export", "type": "direct", "notes": ""}, {"target": "Datum Statusovergang Recht", "field": "Datum Statusovergang", "type": "direct", "notes": ""}, {"target": "Indicatie Toekenning Toeslag", "field": "Indicatie Toekenning Toeslag", "type": "direct", "notes": ""}, {"target": "DIM Natuurlijk Persoon Id", "field": "DIM Natuurlijk Persoon Id", "type": "direct", "notes": ""}, {"target": "DIM Reden Afsluiten Id", "field": "DIM Reden Afsluiten Id", "type": "direct", "notes": ""}, {"target": "DIM Leefvorm Id", "field": "DIM Leefvorm Id", "type": "direct", "notes": ""}, {"target": "DIM Geslacht Id", "field": "DIM Geslacht Id", "type": "direct", "notes": ""}, {"target": "DIM Land Van Export Id", "field": "DIM Land Van Export Id", "type": "direct", "notes": ""}, {"target": "DIM Reden Kortdurende Afsluiting Id", "field": "DIM Reden Kortdurende Afsluiting Id", "type": "direct", "notes": ""}, {"target": "DIM Herkomst Id", "field": "DIM Herkomst Id", "type": "direct", "notes": ""}, {"target": "DIM WG Classificatie Id", "field": "DIM WG Classificatie Id", "type": "direct", "notes": ""}, {"target": "DIM Werkgever Id", "field": "DIM Werkgever Id", "type": "direct", "notes": ""}, {"target": "DIM Geografie Id", "field": "DIM Geografie Id", "type": "direct", "notes": ""}, {"target": "DIM Soort Geval Id", "field": "DIM Soort Geval Id", "type": "direct", "notes": ""}, {"target": "DIM Leeftijd ID Actueel", "field": "DIM Leeftijd ID Actueel", "type": "direct", "notes": ""}, {"target": "DIM Leeftijd ID Aanvang Sessie", "field": "DIM Leeftijd ID Aanvang Sessie", "type": "direct", "notes": ""}, {"target": "DIM Categorie WW Recht Id", "field": "DIM Categorie WW Recht Id", "type": "direct", "notes": ""}, {"target": "DIM Toetredingseis Id", "field": "DIM Toetredingseis Id", "type": "direct", "notes": ""}, {"target": "DIM Soort WW Recht Id", "field": "DIM Soort WW Recht Id", "type": "direct", "notes": ""}, {"target": "DIM Fondscode Id", "field": "DIM Fondscode Id", "type": "direct", "notes": "ALS Status = Aanvraag EN er bestaat een Voorschotrecord met BDR _BT > 0 DAN code = 7\nALS Status = Aanvraag EN er bestaat geen Voorschotrecord met BDR_BT > 0 DAN code = 88\nALS Ind Afgewezen = 1  DAN co…"}, {"target": "DIM Starter Id", "field": "DIM Starter Id", "type": "direct", "notes": ""}, {"target": "DIM Organisatie Id Aanvraag", "field": "DIM Organisatie Id", "type": "direct", "notes": "Funnctionaris die verantwoordelijk is voor de ww-aanvraag. Te bepalen op moment van de aanvraagdatum"}, {"target": "DIM Organisatie Id RB", "field": "DIM Organisatie Id", "type": "direct", "notes": ""}, {"target": "Nummer Financier", "field": "Financiernummer", "type": "direct", "notes": ""}, {"target": "Indicatie Automatisch Betalen", "field": "Indicatie Automatisch Betalen", "type": "direct", "notes": ""}, {"target": "DIM Reden Afsluiten Id AMI", "field": "DIM Reden Afsluiten Id AMI", "type": "direct", "notes": "redenen die te maken hebben met detentie zijn tbv AMI gewijzigd in andere codes in verband met vertrouwelijkheid.\n225 => 226 ((GU) VERBLIJF BUITENLAND ANDERS DAN VAKANTIE)\n625 => 626 (BEEIND) VERBLIJF…"}, {"target": "Afgeleide BSN", "field": "Afgeleide BSN", "type": "direct", "notes": ""}, {"target": "Indicatie Slapend Recht", "field": "DIM Geval Key", "type": "lookup", "notes": "Verschil tussen peildatum en laatste uitkering vaststelling is 4 maanden of meer: \n, case\n   when sg.ind_lopend = 1 \n    and floor ( months_between ( p.snapshot_datum\n                               , …"}, {"target": "Indicatie Slapend Recht", "field": "DIM Soort WW Recht Id", "type": "lookup", "notes": "Verschil tussen peildatum en laatste uitkering vaststelling is 4 maanden of meer: \n, case\n   when sg.ind_lopend = 1 \n    and floor ( months_between ( p.snapshot_datum\n                               , …"}, {"target": "DIM Gevalsnummer", "field": "DIM Gevalsnummer", "type": "direct", "notes": ""}, {"target": "Nummer Aanvraag", "field": "Nummer Aanvraag", "type": "direct", "notes": ""}, {"target": "DIM Indicatie Statistiek Geval", "field": "DIM Soort Geval Id", "type": "lookup", "notes": "als Recht.code_soort_geval <> '14' (oud geval) dan 1\nals vs.datum_statusovg_laatste_uk_vst tussen p.snapshot_datum_vanaf en p.snapshot_datum dan 1\nals betaling.dim_gevalsnummer gevuld dan 1\nanders 0"}, {"target": "DIM Geval Key", "field": "DIM Geval Key", "type": "direct", "notes": ""}, {"target": "DIM WW Recht Key", "field": "DIM WW Recht Key", "type": "direct", "notes": ""}]}, {"src_id": "BDR WW Sessie FA", "count": 4, "types": ["direct", "lookup"], "attrs": [{"target": "Duur Sessie", "field": "Aantal Dagen Uitkering", "type": "direct", "notes": ""}, {"target": "Indicatie Slapend Recht", "field": "Datum Begin Sessie", "type": "lookup", "notes": "Verschil tussen peildatum en laatste uitkering vaststelling is 4 maanden of meer: \n, case\n   when sg.ind_lopend = 1 \n    and floor ( months_between ( p.snapshot_datum\n                               , …"}, {"target": "Datum Aanvang Sessie", "field": "Datum Begin Sessie", "type": "direct", "notes": ""}, {"target": "Datum Einde Sessie", "field": "Datum Einde Sessie", "type": "direct", "notes": ""}]}, {"src_id": "BDR WW Vaststelling FT", "count": 16, "types": ["direct", "lookup"], "attrs": [{"target": "Duur Te Realiseren", "field": "Duur Te Realiseren", "type": "direct", "notes": ""}, {"target": "Duur Totaal Gebruikt", "field": "Duur Totaal Gebruikt", "type": "direct", "notes": ""}, {"target": "Duur Nul Uitkering", "field": "Duur Nul Uitkering", "type": "direct", "notes": ""}, {"target": "DIM Organisatie Id Vaststelling", "field": "DIM Nuluitkering Id", "type": "lookup", "notes": ""}, {"target": "DIM Organisatie Id Vaststelling", "field": "DIM Organisatie Id", "type": "lookup", "notes": ""}, {"target": "DIM Nuluitkering Id", "field": "Bedrag Inkomen Uit Arbeid", "type": "lookup", "notes": "Bepaal de delta tussen totaalbedragen huidige snapshot versus vorige snapshot uit de vaststellingen (bruto, verschillende inhoudingen etc.)\nAls op basis van de delta-bedragen een nul-uitkering wordt g…"}, {"target": "DIM Nuluitkering Id", "field": "Bedrag Grondslag", "type": "lookup", "notes": "Bepaal de delta tussen totaalbedragen huidige snapshot versus vorige snapshot uit de vaststellingen (bruto, verschillende inhoudingen etc.)\nAls op basis van de delta-bedragen een nul-uitkering wordt g…"}, {"target": "DIM Nuluitkering Id", "field": "Bedrag Maatregel Uren", "type": "lookup", "notes": "Bepaal de delta tussen totaalbedragen huidige snapshot versus vorige snapshot uit de vaststellingen (bruto, verschillende inhoudingen etc.)\nAls op basis van de delta-bedragen een nul-uitkering wordt g…"}, {"target": "DIM Nuluitkering Id", "field": "Bedrag Maatregel Percentage", "type": "lookup", "notes": "Bepaal de delta tussen totaalbedragen huidige snapshot versus vorige snapshot uit de vaststellingen (bruto, verschillende inhoudingen etc.)\nAls op basis van de delta-bedragen een nul-uitkering wordt g…"}, {"target": "DIM Nuluitkering Id", "field": "Bedrag Aftrek Startperiode ZZP", "type": "lookup", "notes": "Bepaal de delta tussen totaalbedragen huidige snapshot versus vorige snapshot uit de vaststellingen (bruto, verschillende inhoudingen etc.)\nAls op basis van de delta-bedragen een nul-uitkering wordt g…"}, {"target": "DIM Nuluitkering Id", "field": "Bedrag Nihilstelling", "type": "lookup", "notes": "Bepaal de delta tussen totaalbedragen huidige snapshot versus vorige snapshot uit de vaststellingen (bruto, verschillende inhoudingen etc.)\nAls op basis van de delta-bedragen een nul-uitkering wordt g…"}, {"target": "DIM Nuluitkering Id", "field": "Bedrag Aftrek Arbeid", "type": "lookup", "notes": "Bepaal de delta tussen totaalbedragen huidige snapshot versus vorige snapshot uit de vaststellingen (bruto, verschillende inhoudingen etc.)\nAls op basis van de delta-bedragen een nul-uitkering wordt g…"}, {"target": "DIM Nuluitkering Id", "field": "Bedrag Bruto", "type": "lookup", "notes": "Bepaal de delta tussen totaalbedragen huidige snapshot versus vorige snapshot uit de vaststellingen (bruto, verschillende inhoudingen etc.)\nAls op basis van de delta-bedragen een nul-uitkering wordt g…"}, {"target": "DIM Nuluitkering Id", "field": "Bedrag Gehele Beeindigde Maand", "type": "lookup", "notes": "Bepaal de delta tussen totaalbedragen huidige snapshot versus vorige snapshot uit de vaststellingen (bruto, verschillende inhoudingen etc.)\nAls op basis van de delta-bedragen een nul-uitkering wordt g…"}, {"target": "DIM Type Inkomsten Id", "field": "Bedrag Gehele Beeindigde Maand", "type": "lookup", "notes": "ALS     Vast.bedr-geh-beeind    = 0  EN Vast.bedr-ink-uit-arbeid = 0   \n\tDAN type = 33 en type2 = 0\nANDERS \n\tALS Ink.cd-ink-1 = 80 (of 11?)                                         DAN type = 11 en typ…"}, {"target": "DIM Type Inkomsten Id", "field": "Bedrag Inkomen Uit Arbeid", "type": "lookup", "notes": "ALS     Vast.bedr-geh-beeind    = 0  EN Vast.bedr-ink-uit-arbeid = 0   \n\tDAN type = 33 en type2 = 0\nANDERS \n\tALS Ink.cd-ink-1 = 80 (of 11?)                                         DAN type = 11 en typ…"}]}, {"src_id": "WW Inkomsten", "count": 22, "types": ["concat", "lookup"], "attrs": [{"target": "DIM Soort Inkomsten Id 1", "field": "Afgeleide BSN", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 1", "field": "Code Inkomsten", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 1", "field": "Nummer Districtskantoor", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 1", "field": "Datum Statusovergang", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 1", "field": "Aantal Uren Gewerkt", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 1", "field": "Bedrag Inkomsten", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 2", "field": "Afgeleide BSN", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 2", "field": "Code Inkomsten", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 2", "field": "Nummer Districtskantoor", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 2", "field": "Datum Statusovergang", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 2", "field": "Aantal Uren Gewerkt", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 2", "field": "Bedrag Inkomsten", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 3", "field": "Afgeleide BSN", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 3", "field": "Code Inkomsten", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 3", "field": "Nummer Districtskantoor", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 3", "field": "Datum Statusovergang", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 3", "field": "Aantal Uren Gewerkt", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Soort Inkomsten Id 3", "field": "Bedrag Inkomsten", "type": "concat", "notes": "•\t\"Zoek op basis van BSN en Kantoornummer alle binnen de meetperiode verantwoorde (gestarte of gewijzigde, of doorlopende)  inkomsten met waarde (bedrag + uren) > 0 en koppel die aan alle bij die BSN …"}, {"target": "DIM Nuluitkering Id", "field": "Code Inkomsten", "type": "lookup", "notes": "Bepaal de delta tussen totaalbedragen huidige snapshot versus vorige snapshot uit de vaststellingen (bruto, verschillende inhoudingen etc.)\nAls op basis van de delta-bedragen een nul-uitkering wordt g…"}, {"target": "DIM Type Inkomsten Id", "field": "Afgeleide BSN", "type": "lookup", "notes": "ALS     Vast.bedr-geh-beeind    = 0  EN Vast.bedr-ink-uit-arbeid = 0   \n\tDAN type = 33 en type2 = 0\nANDERS \n\tALS Ink.cd-ink-1 = 80 (of 11?)                                         DAN type = 11 en typ…"}, {"target": "DIM Type Inkomsten Id", "field": "Datum Statusovergang", "type": "lookup", "notes": "ALS     Vast.bedr-geh-beeind    = 0  EN Vast.bedr-ink-uit-arbeid = 0   \n\tDAN type = 33 en type2 = 0\nANDERS \n\tALS Ink.cd-ink-1 = 80 (of 11?)                                         DAN type = 11 en typ…"}, {"target": "DIM Type Inkomsten Id", "field": "Code Inkomsten", "type": "lookup", "notes": "ALS     Vast.bedr-geh-beeind    = 0  EN Vast.bedr-ink-uit-arbeid = 0   \n\tDAN type = 33 en type2 = 0\nANDERS \n\tALS Ink.cd-ink-1 = 80 (of 11?)                                         DAN type = 11 en typ…"}]}, {"src_id": "BDR WW Nuluitkering DT", "count": 2, "types": ["lookup"], "attrs": [{"target": "DIM Organisatie Id Vaststelling", "field": "DIM Nuluitkering Id", "type": "lookup", "notes": ""}, {"target": "DIM Organisatie Id Vaststelling", "field": "Indicatie", "type": "lookup", "notes": ""}]}, {"src_id": "Int Vfv Betaalopdracht Ht", "count": 108, "types": ["concat", "lookup"], "attrs": [{"target": "Bedrag Bet Voorschot Bruto", "field": "Afg Bsn", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Afg Datum Registratie Toekenning", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Code Uitkering", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Code Soort Uitkering Toekenning", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Volgnr Uitkeringsaanvraag", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Code Oud Nieuw Recht", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Bruto Bedrag Te Betalen", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Uitk VT Bruto", "field": "Afg Bsn", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet Uitk VT Bruto", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet Uitk VT Bruto", "field": "Code Uitkering", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet Uitk VT Bruto", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet Uitk VT Bruto", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet Uitk VT Bruto", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet Uitk VT Bruto", "field": "Bruto Bedrag Te Betalen", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet Uitk Vergoeding Bruto", "field": "Afg Bsn", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Bruto", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Bruto", "field": "Code Uitkering", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Bruto", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Bruto", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Bruto", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Bruto", "field": "Bruto Bedrag Te Betalen", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Bruto", "field": "Afg Bsn", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Bruto", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Bruto", "field": "Code Uitkering", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Bruto", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Bruto", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Bruto", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Bruto", "field": "Bruto Bedrag Te Betalen", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW VT Bruto", "field": "Afg Bsn", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet TW VT Bruto", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet TW VT Bruto", "field": "Code Uitkering", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet TW VT Bruto", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet TW VT Bruto", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet TW VT Bruto", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet TW VT Bruto", "field": "Bruto Bedrag Te Betalen", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VT"}, {"target": "Bedrag Bet TW Vergoeding Bruto", "field": "Afg Bsn", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Bruto", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Bruto", "field": "Code Uitkering", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Bruto", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Bruto", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Bruto", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Bruto", "field": "Bruto Bedrag Te Betalen", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk VT Netto", "field": "Afg Bsn", "type": "concat", "notes": ""}, {"target": "Bedrag Bet Uitk VT Netto", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": ""}, {"target": "Bedrag Bet Uitk VT Netto", "field": "Code Uitkering", "type": "concat", "notes": ""}, {"target": "Bedrag Bet Uitk VT Netto", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": ""}, {"target": "Bedrag Bet Uitk VT Netto", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": ""}, {"target": "Bedrag Bet Uitk VT Netto", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": ""}, {"target": "Bedrag Bet Uitk VT Netto", "field": "Bedrag Te Betalen", "type": "concat", "notes": ""}, {"target": "Bedrag Bet Uitk Vergoeding Netto", "field": "Afg Bsn", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Netto", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Netto", "field": "Code Uitkering", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Netto", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Netto", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Netto", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Vergoeding Netto", "field": "Bedrag Te Betalen", "type": "concat", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Netto", "field": "Afg Bsn", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Netto", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Netto", "field": "Code Uitkering", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Netto", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Netto", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Netto", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Netto", "field": "Bedrag Te Betalen", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW VT Netto", "field": "Afg Bsn", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW VT Netto", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW VT Netto", "field": "Code Uitkering", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW VT Netto", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW VT Netto", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW VT Netto", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW VT Netto", "field": "Bedrag Te Betalen", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = UK"}, {"target": "Bedrag Bet TW Vergoeding Netto", "field": "Afg Bsn", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Netto", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Netto", "field": "Code Uitkering", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Netto", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Netto", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Netto", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet TW Vergoeding Netto", "field": "Bedrag Te Betalen", "type": "concat", "notes": "Code Uitkering = TW-WW en Code Soort Uitkering Toekenning = VG"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Afg Bsn", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Afg Datum Registratie Toekenning", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Code Uitkering", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Code Soort Uitkering Toekenning", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Volgnr Uitkeringsaanvraag", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Code Oud Nieuw Recht", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Bruto Bedrag Te Betalen", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Afg Bsn", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Afg Datum Registratie Toekenning", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Code Uitkering", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Code Soort Uitkering Toekenning", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Volgnr Uitkeringsaanvraag", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Code Oud Nieuw Recht", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Bedrag Te Betalen", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Afg Bsn", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Afg Datum Registratie Toekenning", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Code Uitkering", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Code Soort Uitkering Toekenning", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Volgnr Uitkeringsaanvraag", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Code Oud Nieuw Recht", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Bedrag Te Betalen", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Indicatie TW Persoon", "field": "Afg Bsn", "type": "concat", "notes": "Als bedrag TW-bruto > 0 dan indicatie TW Persoon = 1 anders 0"}, {"target": "Indicatie TW Persoon", "field": "Afg Datum Registratie Toekenning", "type": "concat", "notes": "Als bedrag TW-bruto > 0 dan indicatie TW Persoon = 1 anders 0"}, {"target": "Indicatie TW Persoon", "field": "Code Uitkering", "type": "concat", "notes": "Als bedrag TW-bruto > 0 dan indicatie TW Persoon = 1 anders 0"}, {"target": "Indicatie TW Persoon", "field": "Code Soort Uitkering Toekenning", "type": "concat", "notes": "Als bedrag TW-bruto > 0 dan indicatie TW Persoon = 1 anders 0"}, {"target": "Indicatie TW Persoon", "field": "Volgnr Uitkeringsaanvraag", "type": "concat", "notes": "Als bedrag TW-bruto > 0 dan indicatie TW Persoon = 1 anders 0"}, {"target": "Indicatie TW Persoon", "field": "Code Oud Nieuw Recht", "type": "concat", "notes": "Als bedrag TW-bruto > 0 dan indicatie TW Persoon = 1 anders 0"}, {"target": "Indicatie TW Persoon", "field": "Bruto Bedrag Te Betalen", "type": "concat", "notes": "Als bedrag TW-bruto > 0 dan indicatie TW Persoon = 1 anders 0"}, {"target": "DIM Indicatie Statistiek Geval", "field": "Afg Bsn", "type": "lookup", "notes": "als Recht.code_soort_geval <> '14' (oud geval) dan 1\nals vs.datum_statusovg_laatste_uk_vst tussen p.snapshot_datum_vanaf en p.snapshot_datum dan 1\nals betaling.dim_gevalsnummer gevuld dan 1\nanders 0"}, {"target": "DIM Indicatie Statistiek Geval", "field": "Volgnr Uitkeringsaanvraag", "type": "lookup", "notes": "als Recht.code_soort_geval <> '14' (oud geval) dan 1\nals vs.datum_statusovg_laatste_uk_vst tussen p.snapshot_datum_vanaf en p.snapshot_datum dan 1\nals betaling.dim_gevalsnummer gevuld dan 1\nanders 0"}, {"target": "DIM Indicatie Statistiek Geval", "field": "Code Kantoor", "type": "lookup", "notes": "als Recht.code_soort_geval <> '14' (oud geval) dan 1\nals vs.datum_statusovg_laatste_uk_vst tussen p.snapshot_datum_vanaf en p.snapshot_datum dan 1\nals betaling.dim_gevalsnummer gevuld dan 1\nanders 0"}]}, {"src_id": "WW Toekenning", "count": 24, "types": ["lookup"], "attrs": [{"target": "Bedrag Bet Voorschot Bruto", "field": "Code Fase Toekenning", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Nummer Districtskantoor", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Afgeleide BSN", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Registratietijd Vast", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Registratiedatum Vast", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Datum Statusovergang", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Code Fase Toekenning", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Datum Statusovergang", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Nummer Districtskantoor", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Afgeleide BSN", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Registratietijd Vast", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Registratiedatum Vast", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Code Fase Toekenning", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Datum Statusovergang", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Nummer Districtskantoor", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Afgeleide BSN", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Registratietijd Vast", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Registratiedatum Vast", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Code Fase Toekenning", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Datum Statusovergang", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Nummer Districtskantoor", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Afgeleide BSN", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Registratietijd Vast", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Registratiedatum Vast", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}]}, {"src_id": "WW Vaststelling Voorschot", "count": 20, "types": ["lookup"], "attrs": [{"target": "Bedrag Bet Voorschot Bruto", "field": "Afgeleide BSN", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Nummer Districtskantoor", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Registratiedatum Vast", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Registratietijd Vast", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Voorschot Bruto", "field": "Bedrag Bruto", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekennin…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Afgeleide BSN", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Nummer Districtskantoor", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Registratiedatum Vast", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Registratietijd Vast", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Uitk Bruto", "field": "Bedrag Bruto", "type": "lookup", "notes": "Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nummer, datum_toekenni…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Afgeleide BSN", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Nummer Districtskantoor", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Registratiedatum Vast", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Registratietijd Vast", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Voorschot Netto", "field": "Bedrag Bruto", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is een toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_num…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Afgeleide BSN", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Nummer Districtskantoor", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Registratiedatum Vast", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Registratietijd Vast", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}, {"target": "Bedrag Bet Uitk Netto", "field": "Bedrag Bruto", "type": "lookup", "notes": "Bedrag te betalen.  Code Uitkering = WW en Code Soort Uitkering Toekenning = UK en er is geen toekenning en bijbehorende voorschot-vaststelling\nZoek hiervoor bijbehorende toekenning op: afg_bsn, dk_nu…"}]}, {"src_id": "BDR WW Soort Geval DT", "count": 3, "types": ["lookup"], "attrs": [{"target": "Indicatie Slapend Recht", "field": "DIM Soort Geval Id", "type": "lookup", "notes": "Verschil tussen peildatum en laatste uitkering vaststelling is 4 maanden of meer: \n, case\n   when sg.ind_lopend = 1 \n    and floor ( months_between ( p.snapshot_datum\n                               , …"}, {"target": "Indicatie Slapend Recht", "field": "Ind Lopend", "type": "lookup", "notes": "Verschil tussen peildatum en laatste uitkering vaststelling is 4 maanden of meer: \n, case\n   when sg.ind_lopend = 1 \n    and floor ( months_between ( p.snapshot_datum\n                               , …"}, {"target": "DIM Indicatie Statistiek Geval", "field": "Code Soort Geval", "type": "lookup", "notes": "als Recht.code_soort_geval <> '14' (oud geval) dan 1\nals vs.datum_statusovg_laatste_uk_vst tussen p.snapshot_datum_vanaf en p.snapshot_datum dan 1\nals betaling.dim_gevalsnummer gevuld dan 1\nanders 0"}]}, {"src_id": "WW Vaststelling Uitkering", "count": 28, "types": ["concat", "direct", "lookup"], "attrs": [{"target": "Indicatie Slapend Recht", "field": "Datum Overgang Fase Vast", "type": "lookup", "notes": "Verschil tussen peildatum en laatste uitkering vaststelling is 4 maanden of meer: \n, case\n   when sg.ind_lopend = 1 \n    and floor ( months_between ( p.snapshot_datum\n                               , …"}, {"target": "Datum Statusovergang Eerste Uitkering Vaststelling", "field": "Datum Overgang Fase Vast", "type": "direct", "notes": ""}, {"target": "Datum Statusovergang Laatste Uitkering Vaststelling", "field": "Datum Overgang Fase Vast", "type": "direct", "notes": ""}, {"target": "Datum Begin Eerste Uitkeringsperiode", "field": "Begindatum Uitkeringsperiode", "type": "direct", "notes": ""}, {"target": "Datum Einde Laatste Uitkeringsperiode", "field": "Einddatum Uitkeringsperiode", "type": "direct", "notes": ""}, {"target": "Aantal Dagen Uitkering", "field": "Aantal Dagen Uitkering", "type": "direct", "notes": ""}, {"target": "Bedrag Maandloon", "field": "Bedrag Maandloon", "type": "direct", "notes": ""}, {"target": "Bedrag Grondslag", "field": "Bedrag Grondslag", "type": "direct", "notes": ""}, {"target": "Bedrag Gehele Beeindigde Maand", "field": "Bedrag Gehele Beeindigde Maand", "type": "direct", "notes": ""}, {"target": "Bedrag Inkomen Uit Arbeid", "field": "Bedrag Inkomen Uit Arbeid", "type": "direct", "notes": ""}, {"target": "Bedrag Inkomen Ander Recht", "field": "Bedrag Maandloon Ander Recht", "type": "direct", "notes": ""}, {"target": "Bedrag Inkomen Andere Uitkering", "field": "Bedrag Inkomen Andere Uitkering", "type": "direct", "notes": ""}, {"target": "Bedrag Fictief Inkomen", "field": "Bedrag Fictief Inkomen", "type": "direct", "notes": ""}, {"target": "Bedrag Basisuitkering", "field": "Bedrag Basis Uitkering", "type": "direct", "notes": ""}, {"target": "Bedrag Maatregel Uren", "field": "Bedrag Maatregel Uren", "type": "direct", "notes": ""}, {"target": "Bedrag Maatregel Percentage", "field": "Bedrag Maatregel Percentage", "type": "direct", "notes": ""}, {"target": "Bedrag Aftrek Startperiode ZZP", "field": "Bedrag Aftrek Startperiode Maand", "type": "direct", "notes": ""}, {"target": "Bedrag Nihilstelling", "field": "Bedrag Nihilstelling Maand", "type": "direct", "notes": ""}, {"target": "Bedrag Aftrek Arbeid", "field": "Bedrag Aftrek Arbeid", "type": "direct", "notes": ""}, {"target": "Bedrag Uitk Bruto", "field": "Bedrag Bruto Uitkering", "type": "direct", "notes": ""}, {"target": "Bedrag Uitk VT Reservering", "field": "Bedrag Reservering Vakantietoeslag", "type": "direct", "notes": ""}, {"target": "Aantal Herleide Dagen", "field": "Bedrag Reservering Vakantietoeslag", "type": "concat", "notes": "Aan"}, {"target": "Aantal Herleide Dagen", "field": "Bedrag Bruto Uitkering", "type": "concat", "notes": "Aan"}, {"target": "Aantal Herleide Dagen", "field": "Bedrag Maandloon", "type": "concat", "notes": "Aan"}, {"target": "Aantal Herleide Dagen", "field": "Bedrag Grondslag", "type": "concat", "notes": "Aan"}, {"target": "Aantal Herleide Dagen", "field": "Bedrag Basis Uitkering", "type": "concat", "notes": "Aan"}, {"target": "Aantal Herleide Dagen", "field": "Aantal Dagen Uitkering", "type": "concat", "notes": "Aan"}, {"target": "DIM Indicatie Statistiek Geval", "field": "Datum Overgang Fase Vast", "type": "lookup", "notes": "als Recht.code_soort_geval <> '14' (oud geval) dan 1\nals vs.datum_statusovg_laatste_uk_vst tussen p.snapshot_datum_vanaf en p.snapshot_datum dan 1\nals betaling.dim_gevalsnummer gevuld dan 1\nanders 0"}]}, {"src_id": "WW Persoon", "count": 1, "types": ["direct"], "attrs": [{"target": "Indicatie Bijzondere Zaken", "field": "Indicatie Bijzondere Zaken", "type": "direct", "notes": ""}]}, {"src_id": "WW Persoonsbeschrijving", "count": 3, "types": ["direct"], "attrs": [{"target": "Status Vertrokken Onbekend Waarheen", "field": "Status VOW", "type": "direct", "notes": ""}, {"target": "Aantal Uren Maatregel", "field": "Uren Maatregel", "type": "direct", "notes": ""}, {"target": "Aantal Uren Niet Beschikbaar", "field": "Uren Niet Beschikbaar", "type": "direct", "notes": ""}]}, {"src_id": "WW Vaststelling Toeslag", "count": 4, "types": ["direct"], "attrs": [{"target": "Bedrag TW Basis", "field": "Bedrag Basis", "type": "direct", "notes": ""}, {"target": "Bedrag TW VT Reservering", "field": "Bedrag Reservering Vakantietoeslag", "type": "direct", "notes": ""}, {"target": "Bedrag TW Sanctie", "field": "Bedrag Sanctie", "type": "direct", "notes": ""}, {"target": "Bedrag TW Bruto", "field": "Bedrag Bruto", "type": "direct", "notes": ""}]}], "joins": [{"sources": ["$_resource0/BDR WW Nuluitkering DT", "$_resource0/BDR WW Vaststelling FT"], "fields": ["DIM Nuluitkering Id"]}, {"sources": ["$_resource0/BDR WW Vaststelling FT", "$_resource2/WW Inkomsten"], "fields": []}, {"sources": ["$_resource2/WW Toekenning", "$_resource2/WW Vaststelling Voorschot", "$_resource3/Int Vfv Betaalopdracht Ht"], "fields": []}, {"sources": ["$_resource0/BDR WW Recht FT", "$_resource0/BDR WW Sessie FA", "$_resource0/BDR WW Soort Geval DT", "$_resource2/WW Vaststelling Uitkering"], "fields": []}, {"sources": ["$_resource0/BDR WW Recht FT", "$_resource0/BDR WW Soort Geval DT", "$_resource2/WW Vaststelling Uitkering", "$_resource3/Int Vfv Betaalopdracht Ht"], "fields": []}]}];
+const META    = {"source_location": "/BDR WW/BDR WW.ldm, /WW_INT WWO/INT URS WW.ldm, /INT VFV/INT VFV.ldm", "target_location": "/BDR WW/BDR WW.ldm"};
+
+// Kleur per type
+const TYPE_COLOR = {
+  direct:   '#1a6fa8',
+  concat:   '#e07b00',
+  lookup:   '#6a3fa0',
+  join:     '#1a8a50',
+  constant: '#888888',
+};
+
+// ── State ───────────────────────────────────────────────────────────────────
+let activeTypes = new Set(['direct','concat','lookup','join','constant']);
+let focusId     = null;   // gehighlight kaart-id
+let off  = {x:60, y:60}, sc = 0.82;
+let panning = false, ps = {x:0,y:0};
+
+const wrap   = document.getElementById('canvas-wrap');
+const canvas = document.getElementById('canvas');
+const svg    = document.getElementById('lines');
+const tip    = document.getElementById('tooltip');
+
+// ── Layout berekenen ─────────────────────────────────────────────────────────
+// Bronnen links, doelen rechts. Y-positie op basis van aantal verbindingen.
+const COL_SRC_X  = 0;
+const COL_TGT_X  = 420;
+const CARD_W     = 230;
+const ROW_H_SRC  = 72;
+const ROW_H_TGT  = 80;
+
+// Sorteer bronnen: primair eerst, dan op n_targets desc
+const srcsSorted = [...SOURCES].sort((a,b) => {
+  if (a.primary !== b.primary) return b.primary - a.primary;
+  return b.n_targets - a.n_targets;
+});
+
+// Posities bronnen
+const srcPos = {};
+srcsSorted.forEach((s, i) => {
+  srcPos[s.id] = { x: COL_SRC_X, y: i * ROW_H_SRC };
+});
+
+// Posities doelen
+const tgtPos = {};
+TARGETS.forEach((t, i) => {
+  tgtPos[t.id] = { x: COL_TGT_X, y: i * ROW_H_TGT };
+});
+
+// ── DOM-elementen aanmaken ────────────────────────────────────────────────────
+function makeSrcCard(s) {
+  const el = document.createElement('div');
+  el.className = 'card ' + (s.primary ? 'src' : 'sec');
+  el.id = 'card_' + cssId(s.id);
+  el.style.left = srcPos[s.id].x + 'px';
+  el.style.top  = srcPos[s.id].y + 'px';
+  el.style.width = CARD_W + 'px';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'card-header';
+  hdr.innerHTML = `<div class="card-name">${s.id}</div>`
+    + `<div class="card-sub">`
+    + `<span class="card-badge">${s.n_attrs} attrs → ${s.n_targets} tabel(len)</span>`
+    + (s.primary ? '' : ' <em>secondary</em>')
+    + `</div>`;
+  hdr.addEventListener('click', () => setFocus(s.id, 'src'));
+  hdr.addEventListener('mousemove', ev => showTip(ev,
+    `${s.id}\n${s.primary ? 'Primaire bron' : 'Secundaire bron (join/lookup)'}`
+    + ` — ${s.n_attrs} attribuutmappings naar ${s.n_targets} doeltabel(len)`));
+  hdr.addEventListener('mouseleave', hideTip);
+  el.appendChild(hdr);
+  canvas.appendChild(el);
+}
+
+function makeTgtCard(t) {
+  const el = document.createElement('div');
+  el.className = 'card tgt';
+  el.id = 'card_' + cssId(t.id);
+  el.style.left = tgtPos[t.id].x + 'px';
+  el.style.top  = tgtPos[t.id].y + 'px';
+  el.style.width = CARD_W + 'px';
+
+  const totalAttrs = t.edges.reduce((s,e) => s+e.count, 0);
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'card-header';
+  hdr.innerHTML = `<div class="card-name">${t.id}</div>`
+    + `<div class="card-sub"><span class="card-badge">${totalAttrs} attrs</span>`
+    + ` ${t.edges.length} bron(nen)</div>`;
+  hdr.addEventListener('click', () => openDetail(t));
+  hdr.addEventListener('mousemove', ev => {
+    const srcNames = t.edges.map(e=>e.src_id).join(', ');
+    showTip(ev, `${t.id}\n${totalAttrs} attributen uit: ${srcNames}`);
+  });  hdr.addEventListener('mouseleave', hideTip);
+  el.appendChild(hdr);
+
+  // Attribuutlijst (ingeklapt)
+  const attrWrap = document.createElement('div');
+  attrWrap.className = 'card-attrs';
+  attrWrap.style.display = 'none';
+
+  // Verzamel alle attrs over alle edges
+  const allAttrs = [];
+  t.edges.forEach(e => {
+    e.attrs.forEach(a => allAttrs.push({...a, src_id: e.src_id}));
+  });
+  allAttrs.sort((a,b) => a.target.localeCompare(b.target));
+
+  allAttrs.forEach(a => {
+    const row = document.createElement('div');
+    row.className = 'attr-row';
+    row.dataset.type = a.type;
+    row.dataset.src  = a.src_id;
+    const color = TYPE_COLOR[a.type] || '#888';
+    row.innerHTML = `<div class="attr-dot" style="background:${color}"></div>`
+      + `<div class="attr-name">${a.target}</div>`
+      + `<div class="attr-src">${a.src_id}.`
+      + `<span style="color:#334">${a.field}</span></div>`;
+    if (a.notes) {
+      row.addEventListener('mousemove', ev => showTip(ev, a.notes));
+      row.addEventListener('mouseleave', hideTip);
+    }
+    attrWrap.appendChild(row);
+  });
+  el.appendChild(attrWrap);
+
+  const tog = document.createElement('div');
+  tog.className = 'card-toggle';
+  tog.textContent = '▾ attributen tonen';
+  tog.addEventListener('click', () => {
+    const open = attrWrap.style.display !== 'none';
+    attrWrap.style.display = open ? 'none' : 'block';
+    tog.textContent = open ? '▾ attributen tonen' : '▴ verbergen';
+    setTimeout(draw, 60);
+  });
+  el.appendChild(tog);
+  canvas.appendChild(el);
+}
+
+function cssId(id) {
+  return id.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+// ── SVG verbindingslijnen ─────────────────────────────────────────────────────
+function getCardMidRight(id) {
+  const el = document.getElementById('card_' + cssId(id));
+  if (!el) return null;
+  const pos = (srcPos[id] || tgtPos[id]);
+  return { x: pos.x + el.offsetWidth, y: pos.y + el.offsetHeight/2 };
+}
+function getCardMidLeft(id) {
+  const el = document.getElementById('card_' + cssId(id));
+  if (!el) return null;
+  const pos = tgtPos[id];
+  return { x: pos.x, y: pos.y + el.offsetHeight/2 };
+}
+
+let lineNodes = {};  // key → SVG path element
+
+function draw() {
+  // SVG afmeting
+  const mw = COL_TGT_X + CARD_W + 200;
+  const mh = Math.max(
+    srcsSorted.length * ROW_H_SRC,
+    TARGETS.length * ROW_H_TGT
+  ) + 200;
+  svg.setAttribute('width', mw);
+  svg.setAttribute('height', mh);
+
+  // Verwijder alle oude lijnen
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  lineNodes = {};
+
+  TARGETS.forEach(t => {
+    t.edges.forEach(e => {
+      // Filter op actieve types
+      const visibleTypes = e.types.filter(ty => activeTypes.has(ty));
+      if (!visibleTypes.length) return;
+
+      const p1 = getCardMidRight(e.src_id);
+      const p2 = getCardMidLeft(t.id);
+      if (!p1 || !p2) return;
+
+      // Bepaal kleur: prioriteit direct > concat > lookup > join > constant
+      const prio = ['direct','concat','lookup','join','constant'];
+      const dominantType = prio.find(p => visibleTypes.includes(p)) || visibleTypes[0];
+      const col = TYPE_COLOR[dominantType];
+
+      // Dimming
+      const isActive = !focusId || focusId === e.src_id || focusId === t.id;
+      const opacity = isActive ? 0.65 : 0.07;
+
+      // Lijndikte = log van attrs
+      const lw = Math.max(1.2, Math.min(4.5, 1.2 + Math.log(e.count + 1) * 0.8));
+
+      // Bezier
+      const cpx = (p1.x + p2.x) / 2;
+      const d = `M${p1.x},${p1.y} C${cpx},${p1.y} ${cpx},${p2.y} ${p2.x},${p2.y}`;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d', d);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', col);
+      path.setAttribute('stroke-width', lw);
+      path.setAttribute('opacity', opacity);
+      path.style.cursor = 'pointer';
+
+      path.addEventListener('mousemove', ev => {
+        const typeStr = e.types.map(ty =>
+          `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${TYPE_COLOR[ty]};margin-right:3px"></span>${ty}`
+        ).join('  ');
+        showTipHtml(ev,
+          `<strong>${e.src_id}</strong> → <strong>${t.id}</strong><br>`
+          + `${e.count} attribuut${e.count>1?'s':''} &nbsp; ${typeStr}`
+        );
+      });
+      path.addEventListener('mouseleave', hideTip);
+
+      // Klik: open detail panel gefilterd op deze edge
+      path.addEventListener('click', ev => {
+        ev.stopPropagation();
+        openDetailFiltered(t, e.src_id);
+      });
+
+      svg.appendChild(path);
+
+      const key = e.src_id + '|' + t.id;
+      lineNodes[key] = path;
+    });
+  });
+}
+
+// ── Focus / highlight ─────────────────────────────────────────────────────────
+function setFocus(id, kind) {
+  if (focusId === id) { focusId = null; } else { focusId = id; }
+  applyDim();
+  draw();
+}
+
+function applyDim() {
+  // Bron-kaarten
+  SOURCES.forEach(s => {
+    const el = document.getElementById('card_' + cssId(s.id));
+    if (!el) return;
+    if (!focusId) {
+      el.classList.remove('dimmed','highlighted');
+    } else if (s.id === focusId) {
+      el.classList.add('highlighted'); el.classList.remove('dimmed');
+    } else {
+      // Gerelateerd?
+      const related = TARGETS.some(t => t.id === focusId && t.edges.some(e => e.src_id === s.id))
+                   || (focusId === s.id);
+      el.classList.toggle('dimmed', !related);
+      el.classList.toggle('highlighted', false);
+    }
+  });
+  // Doel-kaarten
+  TARGETS.forEach(t => {
+    const el = document.getElementById('card_' + cssId(t.id));
+    if (!el) return;
+    if (!focusId) {
+      el.classList.remove('dimmed','highlighted');
+    } else if (t.id === focusId) {
+      el.classList.add('highlighted'); el.classList.remove('dimmed');
+    } else {
+      const related = t.edges.some(e => e.src_id === focusId) || focusId === t.id;
+      el.classList.toggle('dimmed', !related);
+      el.classList.toggle('highlighted', false);
+    }
+  });
+}
+
+function resetHighlight() {
+  focusId = null;
+  applyDim(); draw();
+  document.getElementById('search').value = '';
+  document.querySelectorAll('.card').forEach(e => e.classList.remove('search-match'));
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+function toggleType(type) {
+  if (activeTypes.has(type)) { activeTypes.delete(type); }
+  else { activeTypes.add(type); }
+  const chip = document.querySelector(`.chip-${type}`);
+  const chk  = document.getElementById('chk-' + type);
+  chip.classList.toggle('off', !activeTypes.has(type));
+  if (chk) chk.checked = activeTypes.has(type);
+
+  // Verberg attr-rijen die niet actief zijn
+  document.querySelectorAll('.attr-row').forEach(row => {
+    row.style.display = activeTypes.has(row.dataset.type) ? '' : 'none';
+  });
+  draw();
+}
+
+// ── Zoeken ────────────────────────────────────────────────────────────────────
+function doSearch(q) {
+  q = q.toLowerCase().trim();
+  document.querySelectorAll('.card').forEach(el => el.classList.remove('search-match'));
+  if (!q) return;
+  const allCards = [...SOURCES.map(s=>s.id), ...TARGETS.map(t=>t.id)];
+  const matches = allCards.filter(id => id.toLowerCase().includes(q));
+  matches.forEach(id => {
+    const el = document.getElementById('card_' + cssId(id));
+    if (el) el.classList.add('search-match');
+  });
+  if (matches.length) {
+    // Pan naar eerste match
+    const firstId = matches[0];
+    const pos = srcPos[firstId] || tgtPos[firstId];
+    if (pos) {
+      sc = 1.1;
+      off.x = wrap.clientWidth/2  - (pos.x + CARD_W/2)*sc;
+      off.y = wrap.clientHeight/2 - (pos.y + 40)*sc;
+      applyT();
+    }
+  }
+}
+
+// ── Detail panel ──────────────────────────────────────────────────────────────
+function openDetail(t) {
+  openDetailFiltered(t, null);
+}
+
+function openDetailFiltered(t, filterSrc) {
+  const panel = document.getElementById('detail');
+  document.getElementById('detail-title').textContent = t.id;
+  const totalAttrs = t.edges.reduce((s,e)=>s+e.count,0);
+  document.getElementById('detail-sub').textContent =
+    `${totalAttrs} attributen · ${t.edges.length} bron(nen)` +
+    (filterSrc ? ` · gefilterd op ${filterSrc}` : '');
+
+  const body = document.getElementById('detail-body');
+  body.innerHTML = '';
+
+  // Filter-tekst
+  if (t.filter) {
+    const fn = document.createElement('div');
+    fn.className = 'detail-filter-note';
+    fn.textContent = t.filter;
+    body.appendChild(fn);
+  }
+
+  // Edges (bronnen)
+  const edgesToShow = filterSrc ? t.edges.filter(e => e.src_id === filterSrc) : t.edges;
+  edgesToShow.forEach(e => {
+    const sec = document.createElement('div');
+    sec.className = 'detail-section';
+
+    const h4 = document.createElement('h4');
+    h4.innerHTML = `<span class="detail-tag" style="background:${e.types[0]?TYPE_COLOR[e.types[0]]:'#888'}">${e.types.join('/')}</span> ${e.src_id}`;
+    sec.appendChild(h4);
+
+    // Tabel met attribuutmappings
+    const tbl = document.createElement('table');
+    tbl.className = 'detail-table';
+    tbl.innerHTML = '<thead><tr><th>Doelattribuut</th><th>Bronveld</th><th>Type</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+
+    e.attrs
+      .filter(a => activeTypes.has(a.type))
+      .forEach(a => {
+        const tr = document.createElement('tr');
+        const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${TYPE_COLOR[a.type]};margin-right:4px"></span>`;
+        tr.innerHTML = `<td>${a.target}</td><td style="color:#6680a0">${a.field}</td><td>${dot}${a.type}</td>`;
+        if (a.notes) {
+          const noteRow = document.createElement('tr');
+          noteRow.innerHTML = `<td colspan="3"><div class="detail-note">${a.notes}</div></td>`;
+          tr.addEventListener('click', () => noteRow.style.display = noteRow.style.display?'':'none');
+          tr.style.cursor = 'pointer';
+          tr.title = 'Klik voor notitie';
+          tbody.appendChild(tr);
+          tbody.appendChild(noteRow);
+          noteRow.style.display = 'none';
+        } else {
+          tbody.appendChild(tr);
+        }
+      });
+
+    tbl.appendChild(tbody);
+    sec.appendChild(tbl);
+    body.appendChild(sec);
+  });
+
+  // Join-condities
+  if (t.joins.length) {
+    const sec = document.createElement('div');
+    sec.className = 'detail-section';
+    const h4 = document.createElement('h4');
+    h4.textContent = 'Join-condities';
+    sec.appendChild(h4);
+    t.joins.forEach(j => {
+      const row = document.createElement('div');
+      row.className = 'detail-row';
+      row.innerHTML = `<div class="lbl">${j.sources.join(' = ')}</div>`
+        + `<div class="val">${j.fields.length ? j.fields.join(', ') : '(zie notities)'}</div>`;
+      sec.appendChild(row);
+    });
+    body.appendChild(sec);
+  }
+
+  panel.classList.add('open');
+
+  // Highlight betrokken kaarten
+  setFocus(t.id, 'tgt');
+}
+
+function closeDetail() {
+  document.getElementById('detail').classList.remove('open');
+  resetHighlight();
+}
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+function showTip(ev, text) {
+  tip.style.display = 'block';
+  tip.innerHTML = text.replace(/\n/g,'<br>');
+  positionTip(ev);
+}
+function showTipHtml(ev, html) {
+  tip.style.display = 'block';
+  tip.innerHTML = html;
+  positionTip(ev);
+}
+function positionTip(ev) {
+  tip.style.left = Math.min(ev.clientX+14, window.innerWidth-300) + 'px';
+  tip.style.top  = Math.min(ev.clientY+14, window.innerHeight-80) + 'px';
+}
+function hideTip() { tip.style.display = 'none'; }
+
+// ── Pan & zoom ────────────────────────────────────────────────────────────────
+wrap.addEventListener('mousedown', ev => {
+  if (ev.target === wrap || ev.target === canvas || ev.target === svg) {
+    panning = true; wrap.classList.add('panning');
+    ps = {x: ev.clientX - off.x, y: ev.clientY - off.y};
+  }
+});
+document.addEventListener('mousemove', ev => {
+  if (!panning) return;
+  off = {x: ev.clientX - ps.x, y: ev.clientY - ps.y};
+  applyT();
+});
+document.addEventListener('mouseup', () => { panning = false; wrap.classList.remove('panning'); });
+wrap.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  const prev = sc;
+  sc = Math.max(0.15, Math.min(3.0, sc * (ev.deltaY > 0 ? 0.9 : 1.11)));
+  const wx = ev.clientX - wrap.getBoundingClientRect().left;
+  const wy = ev.clientY - wrap.getBoundingClientRect().top;
+  off.x = wx - (wx - off.x) * (sc/prev);
+  off.y = wy - (wy - off.y) * (sc/prev);
+  applyT();
+}, {passive:false});
+
+function applyT() {
+  canvas.style.transform = `translate(${off.x}px,${off.y}px) scale(${sc})`;
+}
+
+// ── Fit view ─────────────────────────────────────────────────────────────────
+function fitView() {
+  const allX = [...Object.values(srcPos).map(p=>p.x), ...Object.values(tgtPos).map(p=>p.x+CARD_W)];
+  const allY = [...Object.values(srcPos).map(p=>p.y), ...Object.values(tgtPos).map(p=>p.y+80)];
+  const mnx = Math.min(...allX), mny = Math.min(...allY);
+  const mxx = Math.max(...allX), mxy = Math.max(...allY);
+  const pad = 60;
+  const w = wrap.clientWidth - (document.getElementById('detail').classList.contains('open') ? 340 : 0);
+  const h = wrap.clientHeight;
+  sc  = Math.min((w-pad*2)/(mxx-mnx), (h-pad*2)/(mxy-mny), 1.5);
+  off.x = pad - mnx*sc + (w-pad*2-(mxx-mnx)*sc)/2;
+  off.y = pad - mny*sc + (h-pad*2-(mxy-mny)*sc)/2;
+  applyT();
+}
+
+// ── Kolom-labels ──────────────────────────────────────────────────────────────
+function locLabel(path) {
+  if (!path || path === '?') return 'Bronnen';
+  const labels = path.split(',')
+    .map(p => {
+      p = p.trim();
+      const parts = p.split('/').filter(Boolean);
+      const last  = parts[parts.length - 1] || '';
+      return last.replace(/\.ldm$/i, '') || parts[0] || p;
+    })
+    .filter((v, i, a) => v && a.indexOf(v) === i);
+  return labels.join(' / ') || path;
+}
+
+function addColLabels() {
+  const srcLbl = document.createElement('div');
+  srcLbl.className = 'col-label';
+  srcLbl.style.left = (COL_SRC_X) + 'px';
+  srcLbl.textContent = locLabel(META.source_location);
+  canvas.appendChild(srcLbl);
+
+  const tgtLbl = document.createElement('div');
+  tgtLbl.className = 'col-label';
+  tgtLbl.style.left = (COL_TGT_X) + 'px';
+  tgtLbl.textContent = locLabel(META.target_location);
+  canvas.appendChild(tgtLbl);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+addColLabels();
+srcsSorted.forEach(s => makeSrcCard(s));
+TARGETS.forEach(t => makeTgtCard(t));
+applyT();
+setTimeout(() => { draw(); fitView(); }, 120);
+
+// Klik op achtergrond → reset
+canvas.addEventListener('click', ev => {
+  if (ev.target === canvas || ev.target === svg) {
+    resetHighlight();
+    closeDetail();
+  }
+});
+</script>
+</body>
+</html>

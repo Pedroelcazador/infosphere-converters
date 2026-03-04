@@ -18,6 +18,7 @@ import mimetypes
 import threading
 import webbrowser
 import traceback
+import zipfile
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, unquote
@@ -43,26 +44,28 @@ CONVERTERS = {
 
 AUTO_RUN = {
     'dsexport': ['ds_convert', 'ds_flow', 'ds_job_flow'],
-    'ldm':      ['ldm_convert'],
+    'ldm':      ['ldm_convert', 'ldm_datamodel'],
     'msl':      ['msl_convert', 'msl_lineage'],
 }
 
 TAB_LABELS = {
-    'ds_convert':  'Documentatie',
-    'ds_flow':     'Flow',
-    'ds_job_flow': 'Job Flow',
-    'ldm_convert': 'Documentatie',
-    'msl_convert': 'Mapping',
-    'msl_lineage': 'Lineage',
+    'ds_convert':   'Documentatie',
+    'ds_flow':      'Flow',
+    'ds_job_flow':  'Job Flow',
+    'ldm_convert':  'ERD',
+    'ldm_datamodel':'Datamodel',
+    'msl_convert':  'Mapping',
+    'msl_lineage':  'Lineage',
 }
 
 CONV_OUTPUT_SUFFIX = {
-    'ds_convert':  '_DataStage.html',
-    'ds_flow':     '_Flow.html',
-    'ds_job_flow': '_JobFlow.html',
-    'ldm_convert': '_ERD.html',
-    'msl_convert': '_Mapping.html',
-    'msl_lineage': '_Lineage.html',
+    'ds_convert':   '_DataStage.html',
+    'ds_flow':      '_Flow.html',
+    'ds_job_flow':  '_JobFlow.html',
+    'ldm_convert':  '_ERD.html',
+    'ldm_datamodel':'_Datamodel.html',
+    'msl_convert':  '_Mapping.html',
+    'msl_lineage':  '_Lineage.html',
 }
 
 
@@ -92,7 +95,12 @@ def run_conversion(file_content, filename):
     import logging, importlib.util
     INPUT_DIR.mkdir(exist_ok=True)
     OUTPUT_DIR.mkdir(exist_ok=True)
-    [f2.unlink() for f2 in list(INPUT_DIR.iterdir()) if f2.is_file()]
+    existing = [f for f in INPUT_DIR.iterdir() if f.is_file()]
+    if existing:
+        names = ", ".join(f.name for f in existing)
+        return {"type": "unknown", "tabs": [], "log": "",
+                "error": f"Er staat al een bestand in de inputmap ({names}). "
+                         f"Gebruik 'Nieuwe sessie' om de map leeg te maken voor een nieuwe conversie."}
     [f2.unlink() for f2 in list(OUTPUT_DIR.iterdir()) if f2.is_file()]
     (INPUT_DIR / filename).write_bytes(file_content)
     ftype = detect_type(file_content, filename)
@@ -103,7 +111,9 @@ def run_conversion(file_content, filename):
     errors = []
     for conv_name in to_run:
         sp = CONVERTERS.get(conv_name)
-        if not sp or not sp.exists():
+        if not sp:
+            continue  # tab-only entry (geen eigen converter)
+        if not sp.exists():
             log_lines.append("  ? Niet gevonden: "+conv_name); continue
         log_lines.append(">> "+conv_name)
         for h in logging.root.handlers[:]: logging.root.removeHandler(h)
@@ -192,6 +202,31 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", UI_HTML.encode("utf-8"))
+        elif path == "/readme":
+            readme = ROOT_DIR / "README.md"
+            if not readme.exists():
+                self._send(404, "text/plain", b"README.md niet gevonden")
+                return
+            from md_to_html import md_to_html
+            html = md_to_html(readme.read_text(encoding="utf-8"),
+                              title="Infosphere Converters — Documentatie")
+            self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
+        elif path == "/download-zip":
+            files = [f for f in OUTPUT_DIR.iterdir() if f.is_file()]
+            if not files:
+                self._send(404, "text/plain", b"Geen outputbestanden beschikbaar")
+                return
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for f in files:
+                    zf.write(f, f.name)
+            data = buf.getvalue()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", 'attachment; filename="output.zip"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         elif path.startswith("/output/"):
             fname = unquote(path[8:])
             fpath = OUTPUT_DIR / fname
@@ -204,6 +239,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, "text/plain", b"Niet gevonden")
 
     def do_POST(self):
+        if self.path == "/reset":
+            for f in list(INPUT_DIR.iterdir()):
+                if f.is_file(): f.unlink()
+            self._json({"ok": True})
+            return
         if self.path != "/convert":
             self._send(404, "text/plain", b"Niet gevonden")
             return
@@ -250,6 +290,8 @@ body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;
 #hdr h1{font-size:14px;font-weight:400;color:#cce0f5}
 #hdr h1 strong{color:#fff;font-weight:700}
 #hdr-status{margin-left:auto;font-size:11px;color:rgba(255,255,255,.6)}
+.hbtn{padding:5px 11px;border-radius:4px;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.hbtn:hover{background:rgba(255,255,255,.22)}
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:16px;gap:12px}
 #drop-area{border:2.5px dashed #a0b8d0;border-radius:8px;background:#fff;text-align:center;padding:28px 20px;cursor:pointer;transition:border-color .2s,background .2s;flex-shrink:0;position:relative}
 #drop-area.dragover{border-color:#005b9a;background:#e8f2fb}
@@ -296,6 +338,8 @@ body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;
   <div id="logo">UWV</div>
   <h1><strong>Infosphere Converters</strong> \u2014 Web Interface</h1>
   <span id="hdr-status">Klaar</span>
+  <button class="hbtn" onclick="resetSession()" title="Verwijder inputbestanden voor een nieuwe sessie">\U0001f5d1 Nieuwe sessie</button>
+  <button class="hbtn" onclick="window.open('/readme','_blank')" title="Documentatie">? Help</button>
 </div>
 <div id="main">
   <div id="drop-area" onclick="document.getElementById('file-input').click()">
@@ -310,6 +354,7 @@ body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;
     <div id="tab-bar">
       <div id="tab-actions">
         <button class="abtn" onclick="openNew()">\u2197 Nieuw venster</button>
+        <button class="abtn" onclick="dlZip()">\U0001f4e6 Download zip</button>
         <button class="abtn primary" onclick="dl()">\u2b07 Opslaan</button>
       </div>
     </div>
@@ -330,8 +375,8 @@ let tabs=[],idx=0,logColl=false;
 const drop=document.getElementById('drop-area');
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('dragover')});
 drop.addEventListener('dragleave',()=>drop.classList.remove('dragover'));
-drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('dragover');if(e.dataTransfer.files[0])handle(e.dataTransfer.files[0])});
-document.getElementById('file-input').addEventListener('change',e=>{if(e.target.files[0])handle(e.target.files[0]);e.target.value=''});
+drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('dragover');const files=e.dataTransfer.files;if(files.length>1){setErr('Uploadfout: upload slechts één bestand tegelijk ('+files.length+' bestanden ontvangen).');}else if(files[0])handle(files[0])});
+document.getElementById('file-input').addEventListener('change',e=>{const files=e.target.files;if(files.length>1){setErr('Uploadfout: selecteer slechts één bestand ('+files.length+' bestanden geselecteerd).');}else if(files[0])handle(files[0]);e.target.value=''});
 async function handle(file){
   setStatus('Bezig: '+file.name+'\u2026');setErr(null);
   drop.classList.add('loading');
@@ -366,6 +411,7 @@ function renderTabs(t){
 function sw(i){idx=i;document.querySelectorAll('.tab').forEach((t,j)=>t.classList.toggle('active',j===i));load(i)}
 function load(i){const t=tabs[i];if(t)document.getElementById('frame').src='/output/'+encodeURIComponent(t.filename)}
 function dl(){const t=tabs[idx];if(!t)return;const a=document.createElement('a');a.href='/output/'+encodeURIComponent(t.filename);a.download=t.filename;a.click()}
+function dlZip(){const a=document.createElement('a');a.href='/download-zip';a.download='output.zip';a.click()}
 function openNew(){const t=tabs[idx];if(t)window.open('/output/'+encodeURIComponent(t.filename),'_blank')}
 function showLog(txt){
   const sec=document.getElementById('log-sec'),body=document.getElementById('log-body');
@@ -382,6 +428,16 @@ function toggleLog(){logColl=!logColl;document.getElementById('log-sec').classLi
 function setStatus(m){document.getElementById('hdr-status').textContent=m}
 function setErr(m){const b=document.getElementById('err-bar');b.textContent=m?'\u26a0 '+m:'';b.style.display=m?'block':'none'}
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+async function resetSession(){
+  await fetch('/reset',{method:'POST'});
+  tabs=[];idx=0;
+  document.querySelectorAll('.tab').forEach(x=>x.remove());
+  document.getElementById('out-section').classList.add('hidden');
+  document.getElementById('log-sec').classList.add('hidden');
+  document.getElementById('err-bar').style.display='none';
+  document.getElementById('frame').src='about:blank';
+  setStatus('Klaar');
+}
 </script>
 </body>
 </html>"""
