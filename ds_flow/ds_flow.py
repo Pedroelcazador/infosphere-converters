@@ -26,12 +26,6 @@ ROOT_DIR   = SCRIPT_DIR.parent
 OUTPUT_DIR = ROOT_DIR / 'output'
 LOG_FILE   = SCRIPT_DIR / 'ds_flow.log'
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s  %(levelname)-8s  %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[logging.FileHandler(LOG_FILE, encoding='utf-8'), logging.StreamHandler(sys.stdout)],
-)
 log = logging.getLogger(__name__)
 
 WM_LABEL = {'0': 'INSERT', '1': 'UPDATE', '6': 'BULK LOAD', '9': 'UPSERT/MERGE'}
@@ -806,6 +800,23 @@ if(SEQS.length){currentSeq=SEQS[0];renderFlow(SEQS[0]);}
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    _fmt = logging.Formatter('%(asctime)s  %(levelname)-8s  %(message)s', '%Y-%m-%d %H:%M:%S')
+    _fh  = logging.FileHandler(LOG_FILE, encoding='utf-8')
+    _fh.setFormatter(_fmt)
+    _sh  = logging.StreamHandler(sys.stdout)
+    _sh.setFormatter(_fmt)
+    log.addHandler(_fh)
+    log.addHandler(_sh)
+    log.setLevel(logging.INFO)
+    try:
+      _main()
+    finally:
+      log.removeHandler(_fh)
+      log.removeHandler(_sh)
+      _fh.close()
+
+
+def _main():
     log.info('=' * 60)
     log.info('DataStage XML → Sequencer Flow gestart')
 

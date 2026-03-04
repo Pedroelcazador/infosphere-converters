@@ -43,15 +43,6 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 # Logging (zelfde bestand als msl_convert)
 # ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s  %(levelname)-8s  %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
-        logging.StreamHandler(sys.stdout),
-    ]
-)
 log = logging.getLogger(__name__)
 
 
@@ -85,9 +76,10 @@ def build_lineage_data(data: dict) -> dict:
         for a in m['attributes']:
             for _res, tbl, field in a['inputs']:
                 if tbl not in by_src:
-                    by_src[tbl] = {'count': 0, 'types': set(), 'attrs': []}
+                    by_src[tbl] = {'count': 0, 'types': set(), 'attrs': [], 'target_set': set()}
                 by_src[tbl]['count'] += 1
                 by_src[tbl]['types'].add(a['type'])
+                by_src[tbl]['target_set'].add(a['target'])
                 notes = a['notes']
                 by_src[tbl]['attrs'].append({
                     'target': a['target'],
@@ -110,7 +102,7 @@ def build_lineage_data(data: dict) -> dict:
                     'count': info['count'],
                     'types': sorted(info['types']),
                 })
-                src_info[src]['total_attrs'] += info['count']
+                src_info[src]['total_attrs'] += len(info['target_set'])
 
         joins_out = []
         for j in m['joins']:
@@ -177,6 +169,23 @@ def render_lineage(data: dict, title: str) -> str:
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
+    _fmt = logging.Formatter('%(asctime)s  %(levelname)-8s  %(message)s', '%Y-%m-%d %H:%M:%S')
+    _fh  = logging.FileHandler(LOG_FILE, encoding='utf-8')
+    _fh.setFormatter(_fmt)
+    _sh  = logging.StreamHandler(sys.stdout)
+    _sh.setFormatter(_fmt)
+    log.addHandler(_fh)
+    log.addHandler(_sh)
+    log.setLevel(logging.INFO)
+    try:
+      _main()
+    finally:
+      log.removeHandler(_fh)
+      log.removeHandler(_sh)
+      _fh.close()
+
+
+def _main() -> None:
     log.info("=" * 60)
     log.info("MSL Lineage Visualizer gestart")
 

@@ -29,15 +29,6 @@ NS = 'http:///com/ibm/datatools/metadata/mapping/model/model.ecore'
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s  %(levelname)-8s  %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
-        logging.StreamHandler(sys.stdout),
-    ]
-)
 log = logging.getLogger(__name__)
 
 
@@ -475,6 +466,23 @@ def log_stats(data: dict, msl_path: Path, output_path: Path) -> None:
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
+    _fmt = logging.Formatter('%(asctime)s  %(levelname)-8s  %(message)s', '%Y-%m-%d %H:%M:%S')
+    _fh  = logging.FileHandler(LOG_FILE, encoding='utf-8')
+    _fh.setFormatter(_fmt)
+    _sh  = logging.StreamHandler(sys.stdout)
+    _sh.setFormatter(_fmt)
+    log.addHandler(_fh)
+    log.addHandler(_sh)
+    log.setLevel(logging.INFO)
+    try:
+      _main()
+    finally:
+      log.removeHandler(_fh)
+      log.removeHandler(_sh)
+      _fh.close()
+
+
+def _main() -> None:
     log.info("=" * 60)
     log.info("MSL → Markdown converter gestart")
 

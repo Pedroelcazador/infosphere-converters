@@ -116,11 +116,11 @@ def run_conversion(file_content, filename):
         if not sp.exists():
             log_lines.append("  ? Niet gevonden: "+conv_name); continue
         log_lines.append(">> "+conv_name)
-        for h in logging.root.handlers[:]: logging.root.removeHandler(h)
         lb = LogCapture()
         sh = logging.StreamHandler(lb)
         sh.setFormatter(logging.Formatter("%(levelname)-8s %(message)s"))
-        logging.root.addHandler(sh); logging.root.setLevel(logging.INFO)
+        logging.root.addHandler(sh)
+        logging.root.setLevel(logging.INFO)
         try:
             spec=importlib.util.spec_from_file_location(conv_name,sp)
             mod=importlib.util.module_from_spec(spec)
@@ -132,7 +132,7 @@ def run_conversion(file_content, filename):
         except Exception:
             tb=traceback.format_exc(); errors.append(conv_name+": "+tb); log_lines.append("   FOUT: "+tb)
         finally:
-            for h in logging.root.handlers[:]: logging.root.removeHandler(h)
+            logging.root.removeHandler(sh)
         cap=lb.getvalue().strip()
         if cap: log_lines.append(cap)
         log_lines.append("")

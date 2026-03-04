@@ -33,15 +33,6 @@ from md_to_html import md_to_html as _md_to_html
 # ---------------------------------------------------------------------------
 # Logging instellen
 # ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s  %(levelname)-8s  %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
-        logging.StreamHandler(sys.stdout),
-    ]
-)
 log = logging.getLogger(__name__)
 
 
@@ -1265,6 +1256,23 @@ def log_stats(model: dict, xml_path: Path, md_path: Path | None, erd_path: Path 
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
+    _fmt = logging.Formatter('%(asctime)s  %(levelname)-8s  %(message)s', '%Y-%m-%d %H:%M:%S')
+    _fh  = logging.FileHandler(LOG_FILE, encoding='utf-8')
+    _fh.setFormatter(_fmt)
+    _sh  = logging.StreamHandler(sys.stdout)
+    _sh.setFormatter(_fmt)
+    log.addHandler(_fh)
+    log.addHandler(_sh)
+    log.setLevel(logging.INFO)
+    try:
+      _main()
+    finally:
+      log.removeHandler(_fh)
+      log.removeHandler(_sh)
+      _fh.close()
+
+
+def _main() -> None:
     log.info("=" * 60)
     log.info("LDM XML → Markdown + ERD converter gestart")
     log.info("  Attribuutmodus : alle attributen (incl. DIM-meta)")
