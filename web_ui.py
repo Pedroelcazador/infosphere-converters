@@ -27,46 +27,23 @@ ROOT_DIR   = Path(__file__).resolve().parent
 INPUT_DIR  = ROOT_DIR / 'input'
 OUTPUT_DIR = ROOT_DIR / 'output'
 PORT       = 8080
+MAX_UPLOAD = 50 * 1024 * 1024  # 50 MB
 
 sys.path.insert(0, str(ROOT_DIR))
 
 # ---------------------------------------------------------------------------
-# Converter-registry
+# Converter-registry — afgeleid uit converters.py
 # ---------------------------------------------------------------------------
-CONVERTERS = {
-    'ds_convert':  ROOT_DIR / 'ds_convert'  / 'ds_convert.py',
-    'ds_flow':     ROOT_DIR / 'ds_flow'     / 'ds_flow.py',
-    'ds_job_flow': ROOT_DIR / 'ds_job_flow' / 'ds_job_flow.py',
-    'ldm_convert': ROOT_DIR / 'ldm_convert' / 'ldm_convert.py',
-    'msl_convert': ROOT_DIR / 'msl_convert' / 'msl_convert.py',
-    'msl_lineage': ROOT_DIR / 'msl_lineage' / 'msl_lineage.py',
-}
+from converters import REGISTRY as _REGISTRY
 
-AUTO_RUN = {
-    'dsexport': ['ds_convert', 'ds_flow', 'ds_job_flow'],
-    'ldm':      ['ldm_convert', 'ldm_datamodel'],
-    'msl':      ['msl_convert', 'msl_lineage'],
-}
+CONVERTERS = {c['name']: c['script'] for c in _REGISTRY if c['script']}
 
-TAB_LABELS = {
-    'ds_convert':   'Documentatie',
-    'ds_flow':      'Flow',
-    'ds_job_flow':  'Job Flow',
-    'ldm_convert':  'ERD',
-    'ldm_datamodel':'Datamodel',
-    'msl_convert':  'Mapping',
-    'msl_lineage':  'Lineage',
-}
+AUTO_RUN: dict[str, list[str]] = {}
+for _c in _REGISTRY:
+    AUTO_RUN.setdefault(_c['file_type'], []).append(_c['name'])
 
-CONV_OUTPUT_SUFFIX = {
-    'ds_convert':   '_DataStage.html',
-    'ds_flow':      '_Flow.html',
-    'ds_job_flow':  '_JobFlow.html',
-    'ldm_convert':  '_ERD.html',
-    'ldm_datamodel':'_Datamodel.html',
-    'msl_convert':  '_Mapping.html',
-    'msl_lineage':  '_Lineage.html',
-}
+TAB_LABELS         = {c['name']: c['tab_label']     for c in _REGISTRY}
+CONV_OUTPUT_SUFFIX = {c['name']: c['output_suffix'] for c in _REGISTRY}
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +78,9 @@ def run_conversion(file_content, filename):
         return {"type": "unknown", "tabs": [], "log": "",
                 "error": f"Er staat al een bestand in de inputmap ({names}). "
                          f"Gebruik 'Nieuwe sessie' om de map leeg te maken voor een nieuwe conversie."}
-    [f2.unlink() for f2 in list(OUTPUT_DIR.iterdir()) if f2.is_file()]
+    for f2 in OUTPUT_DIR.iterdir():
+        if f2.is_file():
+            f2.unlink()
     (INPUT_DIR / filename).write_bytes(file_content)
     ftype = detect_type(file_content, filename)
     if ftype == "unknown":
@@ -121,7 +100,6 @@ def run_conversion(file_content, filename):
         sh = logging.StreamHandler(lb)
         sh.setFormatter(logging.Formatter("%(levelname)-8s %(message)s"))
         logging.root.addHandler(sh); logging.root.setLevel(logging.INFO)
-        old=sys.argv[:]; sys.argv=[str(sp)]
         try:
             spec=importlib.util.spec_from_file_location(conv_name,sp)
             mod=importlib.util.module_from_spec(spec)
@@ -133,7 +111,6 @@ def run_conversion(file_content, filename):
         except Exception:
             tb=traceback.format_exc(); errors.append(conv_name+": "+tb); log_lines.append("   FOUT: "+tb)
         finally:
-            sys.argv=old
             for h in logging.root.handlers[:]: logging.root.removeHandler(h)
         cap=lb.getvalue().strip()
         if cap: log_lines.append(cap)
@@ -229,7 +206,10 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
         elif path.startswith("/output/"):
             fname = unquote(path[8:])
-            fpath = OUTPUT_DIR / fname
+            fpath = (OUTPUT_DIR / fname).resolve()
+            if not fpath.is_relative_to(OUTPUT_DIR.resolve()):
+                self._send(404, "text/plain", b"Niet gevonden")
+                return
             if fpath.exists() and fpath.is_file():
                 ct = mimetypes.guess_type(fname)[0] or "application/octet-stream"
                 self._send(200, ct, fpath.read_bytes())
@@ -249,6 +229,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         ct  = self.headers.get("Content-Type", "")
         cl  = int(self.headers.get("Content-Length", 0))
+        if cl > MAX_UPLOAD:
+            self._json({"error": f"Bestand te groot (max {MAX_UPLOAD // (1024*1024)} MB).", "tabs": [], "log": ""})
+            return
         body = self.rfile.read(cl)
         try:
             filename, content = parse_multipart(ct, body)
@@ -277,170 +260,7 @@ class Handler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 # UI HTML
 # ---------------------------------------------------------------------------
-UI_HTML = """<!DOCTYPE html>
-<html lang="nl">
-<head>
-<meta charset="UTF-8">
-<title>Infosphere Converters</title>
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-#hdr{background:#005b9a;padding:0 20px;height:52px;display:flex;align-items:center;gap:14px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.2)}
-#logo{font-size:17px;font-weight:700;background:#fff;color:#005b9a;padding:2px 9px;border-radius:3px}
-#hdr h1{font-size:14px;font-weight:400;color:#cce0f5}
-#hdr h1 strong{color:#fff;font-weight:700}
-#hdr-status{margin-left:auto;font-size:11px;color:rgba(255,255,255,.6)}
-.hbtn{padding:5px 11px;border-radius:4px;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
-.hbtn:hover{background:rgba(255,255,255,.22)}
-#main{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:16px;gap:12px}
-#drop-area{border:2.5px dashed #a0b8d0;border-radius:8px;background:#fff;text-align:center;padding:28px 20px;cursor:pointer;transition:border-color .2s,background .2s;flex-shrink:0;position:relative}
-#drop-area.dragover{border-color:#005b9a;background:#e8f2fb}
-#drop-area.loading{border-color:#005b9a;background:#f0f7ff;cursor:wait}
-#drop-icon{font-size:36px;line-height:1;margin-bottom:8px}
-#drop-text{font-size:14px;color:#4a6a8a}
-#drop-text strong{color:#005b9a}
-#drop-sub{font-size:11px;color:#8899aa;margin-top:5px}
-#file-input{display:none}
-#spinner{display:none;position:absolute;inset:0;background:rgba(240,247,255,.9);border-radius:6px;align-items:center;justify-content:center;flex-direction:column;gap:10px;font-size:13px;color:#005b9a}
-#drop-area.loading #spinner{display:flex}
-.spin{width:32px;height:32px;border:3px solid #c0d8f0;border-top-color:#005b9a;border-radius:50%;animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-#err-bar{display:none;background:#fef0f0;border:1px solid #f0b0b0;border-radius:6px;padding:10px 14px;font-size:12px;color:#c03030;flex-shrink:0}
-#out-section{flex:1;display:flex;flex-direction:column;background:#fff;border-radius:8px;border:1px solid #c8d8e8;overflow:hidden;min-height:0}
-#out-section.hidden{display:none}
-#tab-bar{display:flex;align-items:stretch;background:#f0f7ff;border-bottom:1px solid #c8d8e8;padding:0 12px;gap:2px;flex-shrink:0}
-.tab{padding:9px 16px;font-size:12px;font-weight:600;color:#4a6a8a;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;white-space:nowrap;transition:color .15s}
-.tab:hover{color:#005b9a}
-.tab.active{color:#005b9a;border-bottom-color:#005b9a}
-#tab-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
-.abtn{padding:5px 12px;border-radius:4px;border:1.5px solid #005b9a;background:#fff;color:#005b9a;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap}
-.abtn:hover{background:#e8f2fb}
-.abtn.primary{background:#005b9a;color:#fff}
-.abtn.primary:hover{background:#004a80}
-#frame-wrap{flex:1;position:relative;min-height:0}
-#frame{width:100%;height:100%;border:none;display:block}
-#welcome{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#8899aa;font-size:13px;pointer-events:none}
-#welcome-icon{font-size:40px}
-#log-sec{flex-shrink:0;background:#1c2c3c;border-radius:8px;overflow:hidden;max-height:140px;display:flex;flex-direction:column}
-#log-sec.hidden{display:none}
-#log-hdr{display:flex;align-items:center;padding:5px 12px;background:#142030;cursor:pointer;user-select:none;gap:8px}
-#log-hdr span{font-size:11px;color:#6a9ac0;font-weight:600}
-#log-tog{font-size:10px;color:#4a7a9a;margin-left:auto}
-#log-body{flex:1;overflow-y:auto;padding:8px 12px;font-family:'Courier New',monospace;font-size:10px;color:#a8c8e8;line-height:1.5;white-space:pre-wrap;word-break:break-all}
-.err{color:#f08080}
-.ok{color:#80e0a0}
-#log-sec.collapsed #log-body{display:none}
-#log-sec.collapsed{max-height:32px}
-</style>
-</head>
-<body>
-<div id="hdr">
-  <div id="logo">UWV</div>
-  <h1><strong>Infosphere Converters</strong> \u2014 Web Interface</h1>
-  <span id="hdr-status">Klaar</span>
-  <button class="hbtn" onclick="resetSession()" title="Verwijder inputbestanden voor een nieuwe sessie">\U0001f5d1 Nieuwe sessie</button>
-  <button class="hbtn" onclick="window.open('/readme','_blank')" title="Documentatie">? Help</button>
-</div>
-<div id="main">
-  <div id="drop-area" onclick="document.getElementById('file-input').click()">
-    <div id="drop-icon">\U0001f4c2</div>
-    <div id="drop-text"><strong>Sleep een bestand hiernaartoe</strong> of klik om te kiezen</div>
-    <div id="drop-sub">Ondersteund: DataStage DSExport XML \u00b7 IBM LDM XML \u00b7 MSL</div>
-    <div id="spinner"><div class="spin"></div><span id="spin-txt">Converteren\u2026</span></div>
-  </div>
-  <input type="file" id="file-input" accept=".xml,.msl">
-  <div id="err-bar"></div>
-  <div id="out-section" class="hidden">
-    <div id="tab-bar">
-      <div id="tab-actions">
-        <button class="abtn" onclick="openNew()">\u2197 Nieuw venster</button>
-        <button class="abtn" onclick="dlZip()">\U0001f4e6 Download zip</button>
-        <button class="abtn primary" onclick="dl()">\u2b07 Opslaan</button>
-      </div>
-    </div>
-    <div id="frame-wrap">
-      <iframe id="frame" sandbox="allow-scripts allow-same-origin"></iframe>
-      <div id="welcome"><div id="welcome-icon">\U0001f4c4</div><span>Sleep een bestand om te beginnen</span></div>
-    </div>
-  </div>
-  <div id="log-sec" class="hidden">
-    <div id="log-hdr" onclick="toggleLog()">
-      <span>\u25b8 Log</span><span id="log-tog">\u25b4 inklappen</span>
-    </div>
-    <div id="log-body"></div>
-  </div>
-</div>
-<script>
-let tabs=[],idx=0,logColl=false;
-const drop=document.getElementById('drop-area');
-drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('dragover')});
-drop.addEventListener('dragleave',()=>drop.classList.remove('dragover'));
-drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('dragover');const files=e.dataTransfer.files;if(files.length>1){setErr('Uploadfout: upload slechts één bestand tegelijk ('+files.length+' bestanden ontvangen).');}else if(files[0])handle(files[0])});
-document.getElementById('file-input').addEventListener('change',e=>{const files=e.target.files;if(files.length>1){setErr('Uploadfout: selecteer slechts één bestand ('+files.length+' bestanden geselecteerd).');}else if(files[0])handle(files[0]);e.target.value=''});
-async function handle(file){
-  setStatus('Bezig: '+file.name+'\u2026');setErr(null);
-  drop.classList.add('loading');
-  document.getElementById('spin-txt').textContent='Converteren: '+file.name+'\u2026';
-  const fd=new FormData();fd.append('file',file,file.name);
-  try{
-    const r=await fetch('/convert',{method:'POST',body:fd});
-    const res=await r.json();
-    showLog(res.log||'');
-    if(res.error){setErr(res.error);setStatus('Fout')}
-    else{renderTabs(res.tabs);setStatus('Klaar \u2014 '+file.name)}
-  }catch(e){setErr('Netwerkfout: '+e.message);setStatus('Fout')}
-  finally{drop.classList.remove('loading','dragover')}
-}
-function renderTabs(t){
-  tabs=t;idx=0;
-  document.querySelectorAll('.tab').forEach(x=>x.remove());
-  const bar=document.getElementById('tab-bar');
-  const actions=document.getElementById('tab-actions');
-  if(!t.length){document.getElementById('out-section').classList.add('hidden');return}
-  t.forEach((tab,i)=>{
-    const el=document.createElement('div');
-    el.className='tab'+(i===0?' active':'');
-    el.textContent=tab.label;
-    el.onclick=()=>sw(i);
-    bar.insertBefore(el,actions);
-  });
-  document.getElementById('out-section').classList.remove('hidden');
-  document.getElementById('welcome').style.display='none';
-  load(0);
-}
-function sw(i){idx=i;document.querySelectorAll('.tab').forEach((t,j)=>t.classList.toggle('active',j===i));load(i)}
-function load(i){const t=tabs[i];if(t)document.getElementById('frame').src='/output/'+encodeURIComponent(t.filename)}
-function dl(){const t=tabs[idx];if(!t)return;const a=document.createElement('a');a.href='/output/'+encodeURIComponent(t.filename);a.download=t.filename;a.click()}
-function dlZip(){const a=document.createElement('a');a.href='/download-zip';a.download='output.zip';a.click()}
-function openNew(){const t=tabs[idx];if(t)window.open('/output/'+encodeURIComponent(t.filename),'_blank')}
-function showLog(txt){
-  const sec=document.getElementById('log-sec'),body=document.getElementById('log-body');
-  sec.classList.remove('hidden','collapsed');logColl=false;
-  document.getElementById('log-tog').textContent='\u25b4 inklappen';
-  body.innerHTML=txt.split('\\n').map(l=>{
-    if(l.includes('FOUT')||l.toLowerCase().includes('error'))return '<span class="err">'+esc(l)+'</span>';
-    if(l.includes('OK')||l.includes('Klaar'))return '<span class="ok">'+esc(l)+'</span>';
-    return esc(l);
-  }).join('\\n');
-  body.scrollTop=body.scrollHeight;
-}
-function toggleLog(){logColl=!logColl;document.getElementById('log-sec').classList.toggle('collapsed',logColl);document.getElementById('log-tog').textContent=logColl?'\u25be uitklappen':'\u25b4 inklappen'}
-function setStatus(m){document.getElementById('hdr-status').textContent=m}
-function setErr(m){const b=document.getElementById('err-bar');b.textContent=m?'\u26a0 '+m:'';b.style.display=m?'block':'none'}
-function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-async function resetSession(){
-  await fetch('/reset',{method:'POST'});
-  tabs=[];idx=0;
-  document.querySelectorAll('.tab').forEach(x=>x.remove());
-  document.getElementById('out-section').classList.add('hidden');
-  document.getElementById('log-sec').classList.add('hidden');
-  document.getElementById('err-bar').style.display='none';
-  document.getElementById('frame').src='about:blank';
-  setStatus('Klaar');
-}
-</script>
-</body>
-</html>"""
+UI_HTML = (ROOT_DIR / 'web_ui_template.html').read_text(encoding='utf-8')
 
 
 # ---------------------------------------------------------------------------

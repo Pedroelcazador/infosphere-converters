@@ -10,13 +10,15 @@ Gebruik: leg één DSExport XML in de map en draai `python3 ds_flow.py`
 Output : <bestandsnaam>_Flow.html  +  ds_flow.log
 """
 
-import re, html as htmllib, sys, logging, json
+import re, html as htmllib, sys, logging, json, importlib.util
 from collections import deque
 from pathlib import Path
 
-sys.modules.pop('ds_convert', None)
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'ds_convert'))
-import ds_convert as ds
+_ds_path = Path(__file__).resolve().parent.parent / 'ds_convert' / 'ds_convert.py'
+_ds_spec = importlib.util.spec_from_file_location('ds_convert', _ds_path)
+ds = importlib.util.module_from_spec(_ds_spec)
+sys.modules['ds_convert'] = ds
+_ds_spec.loader.exec_module(ds)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR   = SCRIPT_DIR.parent

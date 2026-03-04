@@ -18,13 +18,11 @@ ROOT_DIR   = Path(__file__).resolve().parent
 INPUT_DIR  = ROOT_DIR / 'input'
 OUTPUT_DIR = ROOT_DIR / 'output'
 
+from converters import REGISTRY as _REGISTRY
 MENU = [
-    ('DataStage → Documentatie (Markdown + HTML)',  'ds_convert',  'ds_convert/ds_convert.py'),
-    ('DataStage → Sequencer flowdiagram (HTML)',     'ds_flow',     'ds_flow/ds_flow.py'),
-    ('DataStage → Job dataflow diagram (HTML)',      'ds_job_flow', 'ds_job_flow/ds_job_flow.py'),
-    ('LDM → Datamodel (Markdown + HTML + ERD)',      'ldm_convert', 'ldm_convert/ldm_convert.py'),
-    ('MSL → Attribuutmapping (Markdown + HTML)',     'msl_convert', 'msl_convert/msl_convert.py'),
-    ('MSL → Lineage diagram (HTML)',                 'msl_lineage', 'msl_lineage/msl_lineage.py'),
+    (c['menu_label'], c['name'], str(c['script'].relative_to(ROOT_DIR)))
+    for c in _REGISTRY
+    if c['menu_label'] and c['script']
 ]
 
 LIJN  = '─' * 50

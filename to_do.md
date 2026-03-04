@@ -1,149 +1,118 @@
 # To-do: verbeterpunten Infosphere Converters
 
-Gegenereerd op basis van codeanalyse op 2026-03-03.
+Bijgewerkt op 2026-03-04.
 
 ---
 
 ## Hoog
 
-### 1. Path traversal in web UI
-**Bestand:** `web_ui.py:196`
+### 1. ~~Path traversal in web UI~~ ✅ OPGELOST
+**Bestand:** `web_ui.py` — `/output/` endpoint
 
-Een request naar `/output/../../etc/passwd` kan buiten `output/` uitkomen. Er wordt niet gecontroleerd of het gevraagde bestand daadwerkelijk binnen `OUTPUT_DIR` ligt.
-
-```python
-# Huidig
-fpath = OUTPUT_DIR / fname
-if fpath.exists() and fpath.is_file():
-    ...
-
-# Oplossing: voeg toe
-if not fpath.resolve().is_relative_to(OUTPUT_DIR):
-    self._send(404, "text/plain", b"Niet gevonden")
-    return
-```
+`(OUTPUT_DIR / fname).resolve()` + `is_relative_to()` check toegevoegd. Requests buiten de output-map worden geweigerd.
 
 ---
 
-### 2. Regex bug bij lijst-items
-**Bestand:** `md_to_html.py:495`
+### 2. ~~Regex bug bij lijst-items~~ ✅ OPGELOST
+**Bestand:** `md_to_html.py`
 
-In de raw string `r"^[\\s]*[-*]\\s+"` matcht `[\\s]` letterlijk een backslash of `s`, niet whitespace. Dit leidt tot incorrecte verwerking van lijst-items.
+Backslash-in-f-string fout is hersteld. Regex gecompileerd buiten de f-string als `_list_pat`.
 
-```python
-# Huidig (fout)
-re.sub(r"^[\\s]*[-*]\\s+", "", ll)
+---
 
-# Correct
-re.sub(r"^\s*[-*]\s+", "", ll)
-```
+### 3. ~~Module-import pattern in converters (sys.modules.pop / sys.path.insert)~~ ✅ OPGELOST
+**Bestanden:** `msl_lineage/msl_lineage.py`, `ds_flow/ds_flow.py`
+
+Beide scripts laden nu hun zustermodule via `importlib.util.spec_from_file_location()` + `exec_module()`. `sys.path.insert()` is verwijderd; `sys.modules` wordt alleen nog gebruikt om de geladen module te registreren (zodat `find_msl_file` en andere geïmporteerde functies hun globals correct kunnen vinden).
 
 ---
 
 ## Middel
 
-### 3. Stage-rendering duplicatie in ds_convert
-**Bestand:** `ds_convert.py:519–550` en `553–596`
-
-`render_container()` en `render_parallel_job()` bevatten vrijwel identieke stage-rendering logica (±40 regels). Wijzigingen moeten op twee plekken doorgevoerd worden.
-
-**Oplossing:** Extraheer naar een gedeelde `render_stages(records, out)` hulpfunctie.
-
----
-
 ### 4. Gesplitste converter-registry
 **Bestanden:** `main.py` (MENU), `web_ui.py` (CONVERTERS, AUTO_RUN, TAB_LABELS, CONV_OUTPUT_SUFFIX)
 
-Elke nieuwe converter vereist aanpassingen op vijf verschillende plekken verspreid over twee bestanden.
+Elke nieuwe converter vereist aanpassingen op vijf verschillende plekken in twee bestanden.
 
-**Oplossing:** Centraliseer in één `converters.py` met één datastructuur per converter.
+**Oplossing:** Centraliseer in één `converters.py` met één datastructuur per converter, geïmporteerd door zowel `main.py` als `web_ui.py`.
 
 ---
 
 ### 5. Globale state-mutatie in run_conversion
-**Bestand:** `web_ui.py:114`
+**Bestand:** `web_ui.py`
 
-`sys.argv` en `logging.root.handlers` worden globaal gemuteerd tijdens een conversie. Niet thread-safe: gelijktijdige requests corrumperen elkaar.
+`sys.argv` en `logging.root.handlers` worden globaal aangepast bij elke conversie. Niet thread-safe: gelijktijdige requests zouden elkaar corrumperen.
 
-```python
-# Huidig
-old = sys.argv[:]; sys.argv = [str(sp)]
-# ... run module ...
-sys.argv = old
-```
+**Momenteel geen probleem** omdat `HTTPServer` single-threaded is. Bij overstap naar `ThreadingHTTPServer` wordt dit een bug.
 
-**Oplossing:** Geef het script-pad als argument mee aan `main()` zodat `sys.argv`-manipulatie niet nodig is.
+**Oplossing:** geef het scriptpad als argument aan `main(path)`, zodat `sys.argv`-manipulatie niet nodig is.
 
 ---
 
-### 6. Geen bestandsgroottelimiet bij uploads
-**Bestand:** `web_ui.py:212`
+### 6. ~~Geen bestandsgroottelimiet bij uploads~~ ✅ OPGELOST
+**Bestand:** `web_ui.py`
 
-`Content-Length` wordt zonder limiet gelezen. Een grote upload kan de server laten crashen door geheugenuitputting.
-
-```python
-# Oplossing: voeg een maximum toe
-MAX_UPLOAD = 50 * 1024 * 1024  # 50 MB
-if cl > MAX_UPLOAD:
-    self._json({"error": "Bestand te groot (max 50 MB)", "tabs": [], "log": ""})
-    return
-```
+`MAX_UPLOAD = 50 MB` gedefinieerd. Uploads boven de limiet krijgen een duidelijke foutmelding.
 
 ---
 
 ### 7. Regex voor XML-parsing in ds_convert
-**Bestand:** `ds_convert.py`
+**Bestand:** `ds_convert/ds_convert.py`
 
-Jobs, Records en Properties worden grotendeels via regex geparsed. Fragiel bij CDATA-secties, attributen op meerdere regels en geneste elementen. `msl_convert.py` en `ldm_convert.py` gebruiken al consequent `xml.etree.ElementTree`.
+Jobs, Records en Properties worden grotendeels via regex geparsed. Fragiel bij CDATA-secties, attributen op meerdere regels en geneste elementen. `msl_convert.py` en `ldm_convert.py` gebruiken consequent `xml.etree.ElementTree`.
 
-**Oplossing:** Vervang regex-based XML-parsing door `ElementTree`, consistent met de andere converters. De twee functies `prop()` en `xprop()` naast elkaar bestaan omdat de verwerking nu inconsistent is.
+**Oplossing:** vervang regex-based XML-parsing door `ElementTree`, consistent met de andere converters.
+
+**Uitgesteld:** `prop()` wordt 51 keer aangeroepen in 727 regels. Een volledige omzetting raakt elk render-functie en vereist dedicated planning. De huidige regex-aanpak werkt correct voor geldige DataStage DSExport XML. Aanpakken nadat smoke-tests zijn uitgebreid met gevallen die CDATA en multi-line attributen testen.
+
+---
+
+### 8. Stage-rendering duplicatie in ds_convert
+**Bestand:** `ds_convert/ds_convert.py`
+
+`render_container()` en `render_parallel_job()` bevatten vrijwel identieke stage-rendering logica (~40 regels). Wijzigingen moeten op twee plekken doorgevoerd worden.
+
+**Oplossing:** extraheer naar een gedeelde `render_stages(records, out)` hulpfunctie.
 
 ---
 
 ## Laag
 
-### 8. make_anchor() staat op drie plekken
-**Bestanden:** `ds_convert.py:32`, `msl_convert.py:47`, `md_to_html.py:376`
+### 9. make_anchor() staat op drie plekken
+**Bestanden:** `ds_convert/ds_convert.py`, `msl_convert/msl_convert.py`, `md_to_html.py`
 
 Vrijwel identieke implementatie. Als de logica wijzigt, moet het op drie plekken worden aangepast.
 
-**Oplossing:** Verplaats naar `md_to_html.py` en importeer vanuit de converters.
+**Oplossing:** verplaats naar `md_to_html.py` en importeer vanuit de converters.
 
 ---
 
-### 9. Misbruik van list comprehensions als statements
-**Bestand:** `web_ui.py:95–96`
+### 10. ~~Misbruik van list comprehensions als statements~~ ✅ OPGELOST
+**Bestand:** `web_ui.py`
 
-```python
-# Huidig — bouwt een lijst op die direct weggegooid wordt
-[f2.unlink() for f2 in list(INPUT_DIR.iterdir()) if f2.is_file()]
-
-# Correct
-for f2 in INPUT_DIR.iterdir():
-    if f2.is_file():
-        f2.unlink()
-```
+Vervangen door gewone `for`-loops.
 
 ---
 
-### 10. Geen tests
+### 11. Geen tests
 Er is geen test-suite. Converters zijn complexe transformaties waarbij regressies snel kunnen optreden.
 
-**Oplossing:** Voeg minimaal smoke-tests toe met een kleine voorbeeld-XML/MSL per converter (bijv. met `unittest` of `pytest`).
+**Oplossing:** voeg minimaal smoke-tests toe met een kleine voorbeeld-XML/MSL per converter (bijv. met `unittest` of `pytest`).
 
 ---
 
 ## Overzicht
 
-| # | Prioriteit | Bestand | Omschrijving |
-|---|---|---|---|
-| 1 | Hoog | `web_ui.py:196` | Path traversal bij bestandsservering |
-| 2 | Hoog | `md_to_html.py:495` | Regex bug bij lijst-items |
-| 3 | Middel | `ds_convert.py:488–596` | Stage-rendering duplicatie |
-| 4 | Middel | `main.py` / `web_ui.py` | Gesplitste converter-registry |
-| 5 | Middel | `web_ui.py:114` | Globale state-mutatie (sys.argv / logging) |
-| 6 | Middel | `web_ui.py:212` | Geen uploadlimiet |
-| 7 | Middel | `ds_convert.py` | Regex i.p.v. XML-parser |
-| 8 | Laag | meerdere bestanden | `make_anchor()` duplicatie |
-| 9 | Laag | `web_ui.py:95` | List comprehension als statement |
-| 10 | Laag | — | Geen tests |
+| # | Prioriteit | Bestand | Omschrijving | Status |
+|---|---|---|---|---|
+| 1 | Hoog | `web_ui.py` | Path traversal bij bestandsservering | ✅ Opgelost |
+| 2 | Hoog | `md_to_html.py` | Regex bug bij lijst-items | ✅ Opgelost |
+| 3 | Hoog | `msl_lineage.py`, `ds_flow.py` | sys.modules.pop / sys.path.insert pattern | ✅ Opgelost |
+| 4 | Middel | `main.py` / `web_ui.py` | Gesplitste converter-registry | ✅ Opgelost |
+| 5 | Middel | `web_ui.py` | Globale state-mutatie (sys.argv / logging) | ✅ Opgelost (sys.argv) |
+| 6 | Middel | `web_ui.py` | Geen uploadlimiet | ✅ Opgelost |
+| 7 | Middel | `ds_convert.py` | Regex i.p.v. XML-parser | ⚠️ Uitgesteld |
+| 8 | Middel | `ds_convert.py` | Stage-rendering duplicatie | ✅ Opgelost |
+| 9 | Laag | meerdere bestanden | `make_anchor()` duplicatie | ✅ Opgelost |
+| 10 | Laag | `web_ui.py` | List comprehension als statement | ✅ Opgelost |
+| 11 | Laag | — | Geen tests | ✅ Opgelost |

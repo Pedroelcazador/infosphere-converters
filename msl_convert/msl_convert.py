@@ -21,7 +21,7 @@ OUTPUT_DIR = ROOT_DIR / 'output'
 LOG_FILE   = SCRIPT_DIR / 'convert_msl.log'
 
 sys.path.insert(0, str(ROOT_DIR))
-from md_to_html import md_to_html
+from md_to_html import md_to_html, make_anchor
 
 # XML namespace
 NS = 'http:///com/ibm/datatools/metadata/mapping/model/model.ecore'
@@ -39,13 +39,6 @@ logging.basicConfig(
     ]
 )
 log = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Hulpfuncties
-# ---------------------------------------------------------------------------
-def make_anchor(text: str) -> str:
-    return re.sub(r'[^a-z0-9\-]', '', text.lower().replace(' ', '-').replace('_', '-'))
 
 
 # ---------------------------------------------------------------------------

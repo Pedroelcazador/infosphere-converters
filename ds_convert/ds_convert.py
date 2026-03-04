@@ -14,7 +14,7 @@ OUTPUT_DIR = ROOT_DIR / 'output'
 LOG_FILE   = SCRIPT_DIR / 'ds_convert.log'
 
 sys.path.insert(0, str(ROOT_DIR))
-from md_to_html import md_to_html
+from md_to_html import md_to_html, make_anchor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,10 +26,6 @@ log = logging.getLogger(__name__)
 
 
 # ── Bestand zoeken & valideren ───────────────────────────────────────────────
-
-def make_anchor(text: str) -> str:
-    """Genereer een HTML anchor-naam die overeenkomt met de inhoudsopgave-links."""
-    return re.sub(r'[^a-z0-9\-]', '', text.lower().replace(' ', '-').replace('_', '-'))
 
 
 def find_xml_file():
@@ -485,76 +481,8 @@ def render_job_header_block(job_id, job_body, date_modified, time_modified):
 
 # ── Parallel job renderer ─────────────────────────────────────────────────────
 
-def render_container(container_name, sc_body, date_modified='?'):
-    """Rendert een SharedContainer als een parallel job sectie."""
-    # Haal de ContainerDefn metadata op
-    defn_m = re.search(r'<Record Identifier="ROOT" Type="ContainerDefn"[^>]*>(.*?)</Record>', sc_body, re.DOTALL)
-    raw_desc = ''
-    if defn_m:
-        defn_body = defn_m.group(1)
-        raw_desc = prop(defn_body, 'Description') or prop(defn_body, 'FullDescription') or ''
-        raw_desc = html.unescape(re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw_desc, flags=re.DOTALL)).strip()
-
-    func_desc, hist = parse_description(raw_desc)
-    anchor = make_anchor(container_name)
-    out = [f'\n<a name="{anchor}"></a>', f"# {container_name}\n",
-           f"**Beschrijving:** {func_desc or '—'}\n"]
-
-    if hist:
-        out += ["**Wijzigingshistorie:**\n", "| Datum | Auteur | Omschrijving |", "|-------|--------|--------------|"]
-        for d, a, o in hist: out.append(f"| {d} | {a} | {o} |")
-        out.append("")
-
-    out.append(f"**Laatste wijziging:** {date_modified}\n")
-
-    # Annotaties
-    anns = get_annotations(sc_body)
-    for ann in anns:
-        if ann.strip():
-            out.append(f"*{ann}*\n")
-
-    out.append("## Stages\n")
-    records = get_records(sc_body)
-
-    for rec_id, (rec_type, rec_body) in records.items():
-        if rec_type in SKIP_TYPES: continue
-        stage_name = prop(rec_body, 'Name') or rec_id
-        stage_type = prop(rec_body, 'StageType') or rec_type
-
-        if stage_type == 'OracleConnectorPX' or rec_type == 'PxOracleConnector':
-            out.append(render_oracle(stage_name, rec_body))
-        elif stage_type in ('PxTransformer', 'Transformer') or rec_type == 'TransformerStage':
-            trx = prop(rec_body, 'TransformCode') or ''
-            out.append(f"\n### {stage_name} — Transformer")
-            if trx: out.append(f"```\n{trx}\n```")
-            out.append("")
-        elif stage_type == 'PxJoin':
-            out.append(render_pxjoin(stage_name, rec_body))
-        elif stage_type == 'PxAggregator':
-            out.append(render_pxagg(stage_name, rec_body))
-        elif stage_type == 'PxSort':
-            out.append(render_pxsort(stage_name, rec_body))
-        elif stage_type == 'PxModify':
-            out.append(render_pxmodify(stage_name, rec_body))
-        elif stage_type in ('PxRemDup',):
-            out.append(f"\n### {stage_name} — Remove Duplicates\n")
-        elif stage_type in ('PxCopy',):
-            out.append(f"\n### {stage_name} — Copy (fan-out)\n")
-        elif stage_type in ('PxLookup',):
-            out.append(f"\n### {stage_name} — Lookup\n")
-        elif rec_type == 'ContainerStage':
-            out.append(render_containerstage(stage_name, rec_body))
-        elif rec_type not in SKIP_TYPES:
-            out.append(f"\n### {stage_name} — {stage_type}\n")
-
-    return '\n'.join(out)
-
-
-def render_parallel_job(job_id, job_body, date_modified, time_modified):
-    out = render_job_header_block(job_id, job_body, date_modified, time_modified)
-    records = get_records(job_body)
-    out.append("## Stages\n")
-
+def render_stages(records: dict, out: list) -> None:
+    """Rendert alle stages uit een records-dict naar de out-lijst."""
     for rec_id, (rec_type, rec_body) in records.items():
         if rec_type in SKIP_TYPES: continue
         stage_name = prop(rec_body, 'Name') or rec_id
@@ -595,6 +523,44 @@ def render_parallel_job(job_id, job_body, date_modified, time_modified):
         elif rec_type not in SKIP_TYPES:
             out.append(f"\n### {stage_name} — {stage_type}\n")
 
+
+def render_container(container_name, sc_body, date_modified='?'):
+    """Rendert een SharedContainer als een parallel job sectie."""
+    # Haal de ContainerDefn metadata op
+    defn_m = re.search(r'<Record Identifier="ROOT" Type="ContainerDefn"[^>]*>(.*?)</Record>', sc_body, re.DOTALL)
+    raw_desc = ''
+    if defn_m:
+        defn_body = defn_m.group(1)
+        raw_desc = prop(defn_body, 'Description') or prop(defn_body, 'FullDescription') or ''
+        raw_desc = html.unescape(re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw_desc, flags=re.DOTALL)).strip()
+
+    func_desc, hist = parse_description(raw_desc)
+    anchor = make_anchor(container_name)
+    out = [f'\n<a name="{anchor}"></a>', f"# {container_name}\n",
+           f"**Beschrijving:** {func_desc or '—'}\n"]
+
+    if hist:
+        out += ["**Wijzigingshistorie:**\n", "| Datum | Auteur | Omschrijving |", "|-------|--------|--------------|"]
+        for d, a, o in hist: out.append(f"| {d} | {a} | {o} |")
+        out.append("")
+
+    out.append(f"**Laatste wijziging:** {date_modified}\n")
+
+    # Annotaties
+    anns = get_annotations(sc_body)
+    for ann in anns:
+        if ann.strip():
+            out.append(f"*{ann}*\n")
+
+    out.append("## Stages\n")
+    render_stages(get_records(sc_body), out)
+    return '\n'.join(out)
+
+
+def render_parallel_job(job_id, job_body, date_modified, time_modified):
+    out = render_job_header_block(job_id, job_body, date_modified, time_modified)
+    out.append("## Stages\n")
+    render_stages(get_records(job_body), out)
     return '\n'.join(out)
 
 

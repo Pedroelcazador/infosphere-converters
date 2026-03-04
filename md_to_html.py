@@ -373,9 +373,12 @@ def _highlight_sql(code: str) -> str:
 # Markdown → HTML converter (Verbeterde Table Logic)
 # ---------------------------------------------------------------------------
 
-def _anchor_id(text: str) -> str:
-    text = re.sub(r'<[^>]+>', '', text)
+def make_anchor(text: str) -> str:
+    """Genereer een HTML anchor-naam (spaties/underscores → koppelteken, rest verwijderd)."""
     return re.sub(r'[^a-z0-9\-]', '', text.lower().replace(' ', '-').replace('_', '-'))
+
+def _anchor_id(text: str) -> str:
+    return make_anchor(re.sub(r'<[^>]+>', '', text))
 
 def _inline(text: str) -> str:
     """Verwerk inline Markdown en herstel geëscapete pipes."""
