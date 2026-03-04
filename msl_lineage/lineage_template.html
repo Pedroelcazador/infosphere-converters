@@ -335,7 +335,9 @@ function makeTgtCard(t) {
   el.style.top  = tgtPos[t.id].y + 'px';
   el.style.width = CARD_W + 'px';
 
-  const totalAttrs = t.edges.reduce((s,e) => s+e.count, 0);
+  const tgtAttrSet = new Set();
+  t.edges.forEach(e => e.attrs.forEach(a => tgtAttrSet.add(a.target)));
+  const totalAttrs = tgtAttrSet.size;
 
   const hdr = document.createElement('div');
   hdr.className = 'card-header';
@@ -613,7 +615,9 @@ function openDetail(t) {
 function openDetailFiltered(t, filterSrc) {
   const panel = document.getElementById('detail');
   document.getElementById('detail-title').textContent = t.id;
-  const totalAttrs = t.edges.reduce((s,e)=>s+e.count,0);
+  const detailAttrSet = new Set();
+  t.edges.forEach(e => e.attrs.forEach(a => detailAttrSet.add(a.target)));
+  const totalAttrs = detailAttrSet.size;
   document.getElementById('detail-sub').textContent =
     `${totalAttrs} attributen · ${t.edges.length} bron(nen)` +
     (filterSrc ? ` · gefilterd op ${filterSrc}` : '');
