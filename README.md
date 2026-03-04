@@ -17,7 +17,9 @@ Ontwikkeld voor het DIM-team bij UWV, gericht op ETL-engineers, informatiearchit
 
 ### Windows (aanbevolen)
 
-Dubbelklik op **`start.bat`**. De webinterface opent automatisch in de browser. Er verschijnt geen terminalvenster.
+Dubbelklik op **`start.bat`**. De webinterface opent automatisch in **Microsoft Edge**. Er verschijnt geen terminalvenster.
+
+> **Opmerking:** de software opent altijd Edge, ook als Internet Explorer als standaardbrowser is ingesteld. Edge moet geïnstalleerd zijn op de machine.
 
 ### Handmatig
 
@@ -25,7 +27,7 @@ Dubbelklik op **`start.bat`**. De webinterface opent automatisch in de browser. 
 python3 web_ui.py
 ```
 
-De server start op `http://localhost:8080` en opent de browser automatisch.
+De server start op `http://localhost:8080` en opent de browser automatisch. Op Windows wordt altijd Microsoft Edge gebruikt.
 
 ---
 
@@ -43,7 +45,8 @@ Ondersteunde bestandstypen:
 
 | Bestand | Herkend als | Tabbladen |
 |---|---|---|
-| DSExport XML (`<DSExport>`) | DataStage | Documentatie · Flow · Job Flow |
+| DSExport XML (`<DSExport>`) — losse job | DataStage | Documentatie · Job Flow |
+| DSExport XML (`<DSExport>`) — sequence | DataStage | Documentatie · Flow |
 | LDM XML (`logicalModelElement`) | Logisch datamodel | ERD · Datamodel |
 | MSL-bestand (`.msl`) | Attribuutmapping | Mapping · Lineage |
 
@@ -82,6 +85,8 @@ Genereert volledige tekstuele documentatie van alle jobs in een DSExport:
 
 ### 2. `ds_flow` — Sequencer flowdiagram
 
+> Wordt alleen uitgevoerd bij een DSExport met een sequencer-job.
+
 **Input:** IBM DataStage DSExport XML
 **Output:** `<naam>_Flow.html`
 
@@ -94,6 +99,8 @@ Interactief flowdiagram per sequencer-job:
 ---
 
 ### 3. `ds_job_flow` — Job dataflow diagram
+
+> Wordt alleen uitgevoerd bij een DSExport met een losse parallel job (geen sequencer).
 
 **Input:** IBM DataStage DSExport XML
 **Output:** `<jobname>_JobFlow.html`
@@ -143,6 +150,8 @@ Interactief data-lineage diagram:
 - Primaire bronnen (direct/concat) en secundaire bronnen (join/lookup) visueel onderscheiden
 - Filter op mapping-type via chips in de toolbar
 - Klik op een kaart of verbinding voor attribuutdetails in een zijpaneel
+- Kaarten zijn versleepbaar voor een aangepaste layout
+- **▴ Inklappen** verbergt alle uitgevouwen attribuutpanelen; **↺ Reset** herstelt de beginposities
 
 ---
 
