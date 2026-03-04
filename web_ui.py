@@ -49,6 +49,21 @@ CONV_OUTPUT_SUFFIX = {c['name']: c['output_suffix'] for c in _REGISTRY}
 # ---------------------------------------------------------------------------
 # Bestandstype detectie
 # ---------------------------------------------------------------------------
+def _dsexport_has_sequence(content: bytes) -> bool:
+    """Geeft True als de DSExport minstens één sequencer-job bevat."""
+    from xml.etree import ElementTree as ET
+    try:
+        root = ET.fromstring(content.decode("utf-8", errors="replace"))
+    except ET.ParseError:
+        return False
+    for job in root.findall("Job"):
+        if job.get("Type") == "2":
+            return True
+        if any(rec.get("Type") == "JSJobActivity" for rec in job.findall("Record")):
+            return True
+    return False
+
+
 def detect_type(content: bytes, filename: str) -> str:
     if filename.lower().endswith(".msl"):
         return "msl"
@@ -85,7 +100,12 @@ def run_conversion(file_content, filename):
     ftype = detect_type(file_content, filename)
     if ftype == "unknown":
         return {"type":"unknown","tabs":[],"log":"Onbekend: "+filename,"error":"Bestandstype niet herkend."}
-    to_run = AUTO_RUN[ftype]
+    to_run = list(AUTO_RUN[ftype])
+    if ftype == "dsexport":
+        if _dsexport_has_sequence(file_content):
+            to_run = [c for c in to_run if c != "ds_job_flow"]
+        else:
+            to_run = [c for c in to_run if c != "ds_flow"]
     log_lines = ["Bestand: "+filename, "Type: "+ftype, ""]
     errors = []
     for conv_name in to_run:
