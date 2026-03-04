@@ -41,6 +41,32 @@ MINIMAL_DSEXPORT = """\
 </DSExport>
 """
 
+# DSExport met CDATA in Description (test dat ET CDATA transparant afhandelt)
+MINIMAL_DSEXPORT_CDATA = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<DSExport ServerName="TestServer" Date="2026-01-01">
+<Job Identifier="TestCdataJob" JobType="1" DateModified="2026-01-01">
+  <Record Identifier="ROOT" Type="DSJobDef">
+    <Property Name="Name">TestCdataJob</Property>
+    <Property Name="Description"><![CDATA[Beschrijving met <speciale> tekens & meer]]></Property>
+  </Record>
+</Job>
+</DSExport>
+"""
+
+# DSExport met HTML-entities in Description (test dat ET entities decodeert)
+MINIMAL_DSEXPORT_ENTITIES = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<DSExport Date="2026-01-01">
+<Job Identifier="TestEntityJob" JobType="1" DateModified="2026-01-01">
+  <Record Identifier="ROOT" Type="DSJobDef">
+    <Property Name="Name">TestEntityJob</Property>
+    <Property Name="Description">Verwerkt input &amp; output data</Property>
+  </Record>
+</Job>
+</DSExport>
+"""
+
 # Geldige DSExport voor ds_job_flow:
 #   - vereist exacte string "<DSExport>" (zonder attributen)
 #   - vereist een ROOT record (job-metadata) en V0 record (ContainerView met stages)
@@ -177,40 +203,81 @@ class TestDsConvert(unittest.TestCase):
     # --- prop ---
 
     def test_prop_found(self):
-        xml = '<Property Name="JobDescription">TestBeschrijving</Property>'
-        self.assertEqual(self.mod.prop(xml, 'JobDescription'), 'TestBeschrijving')
+        # prop() werkt nu op ET-elementen; wrapper-element als parent
+        elem = ET.fromstring('<Record><Property Name="JobDescription">TestBeschrijving</Property></Record>')
+        self.assertEqual(self.mod.prop(elem, 'JobDescription'), 'TestBeschrijving')
 
     def test_prop_missing_returns_empty(self):
-        xml = '<Property Name="Other">Waarde</Property>'
-        self.assertEqual(self.mod.prop(xml, 'Ontbreekt'), '')
+        elem = ET.fromstring('<Record><Property Name="Other">Waarde</Property></Record>')
+        self.assertEqual(self.mod.prop(elem, 'Ontbreekt'), '')
+
+    def test_prop_cdata(self):
+        """prop() extraheert CDATA-inhoud correct — ET handelt dit transparant af."""
+        elem = ET.fromstring(
+            '<Record><Property Name="Desc"><![CDATA[inhoud & meer]]></Property></Record>'
+        )
+        self.assertEqual(self.mod.prop(elem, 'Desc'), 'inhoud & meer')
+
+    def test_prop_html_entity(self):
+        """prop() decodeert XML-entities correct via ET."""
+        elem = ET.fromstring(
+            '<Record><Property Name="Desc">input &amp; output</Property></Record>'
+        )
+        self.assertEqual(self.mod.prop(elem, 'Desc'), 'input & output')
 
     # --- split_jobs ---
 
     def test_split_jobs_count(self):
-        jobs = self.mod.split_jobs(MINIMAL_DSEXPORT)
+        root = ET.fromstring(MINIMAL_DSEXPORT)
+        jobs = self.mod.split_jobs(root)
         self.assertEqual(len(jobs), 1)
 
     def test_split_jobs_fields(self):
-        job_id, job_type, _ = self.mod.split_jobs(MINIMAL_DSEXPORT)[0]
+        root = ET.fromstring(MINIMAL_DSEXPORT)
+        job_id, job_type, _ = self.mod.split_jobs(root)[0]
         self.assertEqual(job_id,   'TestParJob')
         self.assertEqual(job_type, '1')
 
     # --- validate_dse ---
 
     def test_validate_dse_rejects_non_dse(self):
+        root = ET.fromstring('<SomeOtherRoot/>')
         with self.assertRaises(SystemExit):
-            self.mod.validate_dse('<SomeOtherRoot/>', Path('test.xml'))
+            self.mod.validate_dse(root, Path('test.xml'))
 
     def test_validate_dse_rejects_no_jobs(self):
-        content = '<DSExport><Header/></DSExport>'
+        root = ET.fromstring('<DSExport><Header/></DSExport>')
         with self.assertRaises(SystemExit):
-            self.mod.validate_dse(content, Path('test.xml'))
+            self.mod.validate_dse(root, Path('test.xml'))
 
     def test_validate_dse_accepts_valid(self):
+        root = ET.fromstring(MINIMAL_DSEXPORT)
         try:
-            self.mod.validate_dse(MINIMAL_DSEXPORT, Path('test.xml'))
+            self.mod.validate_dse(root, Path('test.xml'))
         except SystemExit:
             self.fail("validate_dse() riep sys.exit() aan voor een geldige DSExport")
+
+    # --- CDATA & entities smoke tests ---
+
+    def test_smoke_main_cdata(self):
+        """main() verwerkt CDATA in descriptions correct en plaatst inhoud in output."""
+        (self.inp / 'test_export.xml').unlink()
+        (self.inp / 'test_cdata.xml').write_text(MINIMAL_DSEXPORT_CDATA, encoding='utf-8')
+        self.mod.main()
+        html_files = list(self.out.glob('*_DataStage.html'))
+        self.assertEqual(len(html_files), 1)
+        content = html_files[0].read_text(encoding='utf-8')
+        self.assertIn('speciale', content)
+
+    def test_smoke_main_entities(self):
+        """main() decodeert HTML-entities in descriptions correct."""
+        (self.inp / 'test_export.xml').unlink()
+        (self.inp / 'test_entities.xml').write_text(MINIMAL_DSEXPORT_ENTITIES, encoding='utf-8')
+        self.mod.main()
+        html_files = list(self.out.glob('*_DataStage.html'))
+        self.assertEqual(len(html_files), 1)
+        content = html_files[0].read_text(encoding='utf-8')
+        self.assertIn('input &amp; output', content)
 
 
 # ---------------------------------------------------------------------------

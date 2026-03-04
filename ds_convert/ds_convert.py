@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Versie: 2026-03-01 12:00
+# Versie: 2026-03-04 12:00
 """IBM DataStage DSExport XML → Markdown converter"""
 
 import re, html, sys, logging
@@ -50,32 +50,38 @@ def read_xml(path):
             continue
     log.error("Kan %s niet lezen", path.name); sys.exit(1)
 
-def validate_dse(content, xml_path):
+def validate_dse(root, xml_path):
     errors = []
-    if '<DSExport' not in content:
-        errors.append("Geen <DSExport> root element — dit lijkt geen DataStage export.")
-    has_jobs = bool(re.search(r'<Job Identifier=', content))
-    has_containers = bool(re.search(r'<SharedContainer Identifier=', content))
-    if not has_jobs and not has_containers:
-        errors.append("Geen <Job> of <SharedContainer> elementen — mogelijk LDM datamodel of ander formaat.")
-    if 'logicalModelElement' in content:
-        errors.append("logicalModelElement gevonden — gebruik de LDM converter.")
+    if root.tag != 'DSExport':
+        msg = "Geen <DSExport> root element"
+        if root.tag == 'logicalModelElement':
+            msg += " — logicalModelElement gevonden, gebruik de LDM converter"
+        else:
+            msg += f" (gevonden: <{root.tag}>) — dit lijkt geen DataStage export"
+        errors.append(msg + ".")
+    else:
+        has_jobs       = bool(root.findall('Job'))
+        has_containers = bool(root.findall('SharedContainer'))
+        if not has_jobs and not has_containers:
+            errors.append("Geen <Job> of <SharedContainer> elementen — mogelijk LDM datamodel of ander formaat.")
+        if root.find('.//logicalModelElement') is not None:
+            errors.append("logicalModelElement gevonden — gebruik de LDM converter.")
     if errors:
         for e in errors: log.error("Validatiefout: %s", e)
         log.error("Conversie afgebroken voor: %s", xml_path.name); sys.exit(1)
-    n_jobs = len(re.findall(r'<Job Identifier=', content))
-    n_ctr  = len(re.findall(r'<SharedContainer Identifier=', content))
+    n_jobs = len(root.findall('Job'))
+    n_ctr  = len(root.findall('SharedContainer'))
     log.info("Validatie geslaagd — %d jobs, %d shared containers", n_jobs, n_ctr)
 
 
 # ── Hulpfuncties ─────────────────────────────────────────────────────────────
 
-def prop(text, name):
-    """Haal een <Property Name="..."> waarde op."""
-    m = re.search(rf'<Property Name="{re.escape(name)}"[^>]*>(.*?)</Property>', text, re.DOTALL)
-    if not m: return ''
-    val = re.sub(r'^\s*<!\[CDATA\[(.*?)\]\]>\s*$', r'\1', m.group(1).strip(), flags=re.DOTALL)
-    return val.strip()
+def prop(elem, name):
+    """Haal een <Property Name="..."> waarde op uit een ET-element."""
+    p = elem.find(f"Property[@Name='{name}']")
+    if p is None:
+        return ''
+    return (p.text or '').strip()
 
 def xprop(tree, *tags):
     """Haal een waarde op uit een XMLProperties ElementTree via tag-naam(en)."""
@@ -86,15 +92,17 @@ def xprop(tree, *tags):
                 return elem.text.strip()
     return ''
 
-def get_xmlprops_tree(rec_body):
+def get_xmlprops_tree(rec_elem):
     """Haal XMLProperties op uit een CustomStage record en parse als XML tree."""
-    for sub in re.finditer(r'<SubRecord>(.*?)</SubRecord>', rec_body, re.DOTALL):
-        sb = sub.group(1)
-        n = re.search(r'<Property Name="Name"[^>]*>(.*?)</Property>', sb)
-        if not n or n.group(1).strip() != 'XMLProperties': continue
-        v = re.search(r'<Property Name="Value"[^>]*>(.*?)</Property>', sb, re.DOTALL)
-        if not v: continue
-        raw = html.unescape(v.group(1).strip())
+    for sub in rec_elem.findall('SubRecord'):
+        n = sub.find("Property[@Name='Name']")
+        if n is None or (n.text or '').strip() != 'XMLProperties':
+            continue
+        v = sub.find("Property[@Name='Value']")
+        if v is None:
+            continue
+        # XMLProperties-waarde is HTML-escaped XML; html.unescape nodig voor CDATA-opgeslagen waarden
+        raw = html.unescape((v.text or '').strip())
         try:
             return ET.fromstring(raw)
         except ET.ParseError:
@@ -132,61 +140,53 @@ def parse_description(desc):
 
 # ── XML splitsen ─────────────────────────────────────────────────────────────
 
-def split_jobs(content):
+def split_jobs(root):
     """
-    Geeft lijst van (job_id, job_type, job_body).
+    Geeft lijst van (job_id, job_type, job_elem).
     JobType="1" = parallel, JobType="2" = sequencer.
     Valt terug op lege string als het attribuut ontbreekt.
     """
     results = []
-    for m in re.finditer(r'<Job Identifier="([^"]+)"([^>]*?)>(.*?)</Job>', content, re.DOTALL):
-        job_id    = m.group(1)
-        attrs     = m.group(2)
-        job_body  = m.group(3)
-        jt = re.search(r'JobType="([^"]*)"', attrs)
-        job_type  = jt.group(1) if jt else ''
-        results.append((job_id, job_type, job_body))
+    for job_elem in root.findall('Job'):
+        job_id   = job_elem.get('Identifier', '')
+        job_type = job_elem.get('JobType', '')
+        results.append((job_id, job_type, job_elem))
     return results
 
 
-def split_containers(content):
+def split_containers(root):
     """
-    Extraheert SharedContainer blokken uit de volledige XML content.
-    Geeft lijst van (container_name, date_modified, container_body).
+    Extraheert SharedContainer elementen uit de root.
+    Geeft lijst van (container_name, date_modified, sc_elem).
     """
     containers = []
-    for m in re.finditer(
-        r'<SharedContainer Identifier="([^"]+)"([^>]*?)>(.*?)</SharedContainer>',
-        content, re.DOTALL
-    ):
-        name       = m.group(1)
-        attrs      = m.group(2)
-        sc_body    = m.group(3)
-        dm = re.search(r'DateModified="([^"]+)"', attrs)
-        date_mod   = dm.group(1) if dm else '?'
-        containers.append((name, date_mod, sc_body))
+    for sc_elem in root.findall('SharedContainer'):
+        name     = sc_elem.get('Identifier', '')
+        date_mod = sc_elem.get('DateModified', '?')
+        containers.append((name, date_mod, sc_elem))
     return containers
 
-def get_records(job_body):
-    return {m.group(1): (m.group(2), m.group(3))
-            for m in re.finditer(r'<Record Identifier="([^"]+)" Type="([^"]+)"[^>]*>(.*?)</Record>', job_body, re.DOTALL)}
+def get_records(job_elem):
+    return {
+        rec.get('Identifier', ''): (rec.get('Type', ''), rec)
+        for rec in job_elem.findall('Record')
+    }
 
-def get_job_header(job_body, job_id):
-    name = prop(job_body, 'Name') or job_id
+def get_job_header(job_elem, job_id):
+    name = prop(job_elem, 'Name') or job_id
 
-    # Description + wijzigingshistorie zit in ROOT record
-    root_m = re.search(r'<Record Identifier="ROOT"[^>]*>(.*?)</Record>', job_body, re.DOTALL)
+    root_rec = job_elem.find("Record[@Identifier='ROOT']")
     raw_desc = ''
     params   = []
-    if root_m:
-        rb       = root_m.group(1)
-        raw_desc = prop(rb, 'Description') or prop(rb, 'FullDescription') or prop(rb, 'ShortDescription')
-        raw_desc = html.unescape(re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw_desc, flags=re.DOTALL)).strip()
-        # Parameters uit SubRecords in ROOT
-        for sub in re.finditer(r'<SubRecord>(.*?)</SubRecord>', rb, re.DOTALL):
-            sb = sub.group(1)
-            pname = prop(sb, 'Name')
-            pdef  = prop(sb, 'Default') or prop(sb, 'DefaultValue')
+    if root_rec is not None:
+        raw_desc = (
+            prop(root_rec, 'Description')
+            or prop(root_rec, 'FullDescription')
+            or prop(root_rec, 'ShortDescription')
+        )
+        for sub in root_rec.findall('SubRecord'):
+            pname = prop(sub, 'Name')
+            pdef  = prop(sub, 'Default') or prop(sub, 'DefaultValue')
             if not pname: continue
             if pname.startswith('$') or pname.startswith('par_'): continue
             if pdef in ('(As pre-defined)', ''): continue
@@ -195,16 +195,15 @@ def get_job_header(job_body, job_id):
     func_desc, hist = parse_description(raw_desc)
     return name, func_desc, hist, params
 
-def get_annotations(job_body):
+def get_annotations(job_elem):
     anns = []
-    for m in re.finditer(r'<Record Identifier="[^"]+" Type="Annotation"[^>]*>(.*?)</Record>', job_body, re.DOTALL):
-        body = m.group(1)
-        # AnnotationType 0 = tekstannotatie, 1 = layout/lege annotatie
-        ann_type = prop(body, 'AnnotationType')
-        if ann_type == '1': continue
-        txt = prop(body, 'AnnotationText')
-        if not txt: continue
-        txt = html.unescape(txt).strip()
+    for rec in job_elem.findall('Record'):
+        if rec.get('Type') != 'Annotation':
+            continue
+        ann_type = prop(rec, 'AnnotationType')
+        if ann_type == '1':
+            continue
+        txt = prop(rec, 'AnnotationText')
         if txt:
             anns.append(txt)
     return anns
@@ -212,15 +211,13 @@ def get_annotations(job_body):
 
 # ── Oracle Connector renderer ─────────────────────────────────────────────────
 
-def detect_mode(rec_body):
+def detect_mode(rec_elem):
     """TARGET als InputPins aanwezig en niet leeg."""
-    m = re.search(r'<Property Name="InputPins"[^>]*>(.*?)</Property>', rec_body)
-    if m and m.group(1).strip(): return 'TARGET'
-    return 'SOURCE'
+    return 'TARGET' if prop(rec_elem, 'InputPins') else 'SOURCE'
 
-def render_oracle(stage_name, rec_body):
-    xp   = get_xmlprops_tree(rec_body)
-    mode = detect_mode(rec_body)
+def render_oracle(stage_name, rec_elem):
+    xp   = get_xmlprops_tree(rec_elem)
+    mode = detect_mode(rec_elem)
     lines = [f"\n### {stage_name} — OracleConnectorPX", f"**Type:** {mode}"]
 
     if xp is None:
@@ -323,15 +320,14 @@ SKIP_TYPES = {
 
 # ── Px stage property helpers ─────────────────────────────────────────────────
 
-def get_custom_props(rec_body):
+def get_custom_props(rec_elem):
     """Geeft dict van alle CustomProperty name→value paren."""
     props = {}
-    for sub in re.finditer(r'<SubRecord>(.*?)</SubRecord>', rec_body, re.DOTALL):
-        sb = sub.group(1)
-        n = re.search(r'<Property Name="Name"[^>]*>(.*?)</Property>', sb)
-        v = re.search(r'<Property Name="Value"[^>]*>(.*?)</Property>', sb, re.DOTALL)
-        if n and v:
-            props[n.group(1).strip()] = v.group(1).strip()
+    for sub in rec_elem.findall('SubRecord'):
+        n = sub.find("Property[@Name='Name']")
+        v = sub.find("Property[@Name='Value']")
+        if n is not None and v is not None:
+            props[(n.text or '').strip()] = (v.text or '').strip()
     return props
 
 def parse_px_keys(key_str):
@@ -378,19 +374,18 @@ def parse_px_modifyspec(spec_str):
             ops.append(op)
     return ops
 
-def render_pxjoin(stage_name, rec_body):
-    cprops = get_custom_props(rec_body)
+def render_pxjoin(stage_name, rec_elem):
+    cprops = get_custom_props(rec_elem)
     operator = cprops.get('operator', '').lower()
     key_str  = cprops.get('key', '')
     keys = parse_px_keys(key_str)
-    # Mooiere naam voor join type
     labels = {
         'innerjoin': 'Inner Join', 'leftouterjoin': 'Left Outer Join',
         'rightouterjoin': 'Right Outer Join', 'fullouterjoin': 'Full Outer Join',
     }
     op_label = labels.get(operator, operator or '?')
     lines = [f"\n### {stage_name} — Join", f"**Type:** {op_label}"]
-    n_inputs = len([p for p in prop(rec_body, 'InputPins').split('|') if p.strip()])
+    n_inputs = len([p for p in prop(rec_elem, 'InputPins').split('|') if p.strip()])
     if n_inputs > 2:
         lines.append(f"**Inputs:** {n_inputs} links")
     if keys:
@@ -400,10 +395,10 @@ def render_pxjoin(stage_name, rec_body):
     return '\n'.join(lines)
 
 
-def render_pxagg(stage_name, rec_body):
-    cprops = get_custom_props(rec_body)
-    method    = cprops.get('method', '')
-    key_str   = cprops.get('key', '')
+def render_pxagg(stage_name, rec_elem):
+    cprops = get_custom_props(rec_elem)
+    method     = cprops.get('method', '')
+    key_str    = cprops.get('key', '')
     reduce_str = cprops.get('reduce', '')
     keys    = parse_px_keys(key_str)
     reduces = parse_px_reduce(reduce_str)
@@ -420,8 +415,8 @@ def render_pxagg(stage_name, rec_body):
     return '\n'.join(lines)
 
 
-def render_pxsort(stage_name, rec_body):
-    cprops = get_custom_props(rec_body)
+def render_pxsort(stage_name, rec_elem):
+    cprops = get_custom_props(rec_elem)
     key_str = cprops.get('key', '')
     keys = parse_px_keys(key_str)
     lines = [f"\n### {stage_name} — Sort"]
@@ -432,8 +427,8 @@ def render_pxsort(stage_name, rec_body):
     return '\n'.join(lines)
 
 
-def render_pxmodify(stage_name, rec_body):
-    cprops = get_custom_props(rec_body)
+def render_pxmodify(stage_name, rec_elem):
+    cprops = get_custom_props(rec_elem)
     spec_str = cprops.get('modifyspec', '')
     ops = parse_px_modifyspec(spec_str)
     lines = [f"\n### {stage_name} — Modify"]
@@ -445,15 +440,15 @@ def render_pxmodify(stage_name, rec_body):
     return '\n'.join(lines)
 
 
-def render_containerstage(stage_name, rec_body):
-    container_name = prop(rec_body, 'ContainerName') or '?'
+def render_containerstage(stage_name, rec_elem):
+    container_name = prop(rec_elem, 'ContainerName') or '?'
     lines = [f"\n### {stage_name} — Container", f"**Gebruikt container:** `{container_name}`", ""]
     return '\n'.join(lines)
 
 
-def render_job_header_block(job_id, job_body, date_modified, time_modified):
-    name, func_desc, hist, params = get_job_header(job_body, job_id)
-    anns = get_annotations(job_body)
+def render_job_header_block(job_id, job_elem, date_modified, time_modified):
+    name, func_desc, hist, params = get_job_header(job_elem, job_id)
+    anns = get_annotations(job_elem)
 
     anchor = make_anchor(job_id)
     out = [f'\n<a name="{anchor}"></a>', f"# {name}\n", f"**Beschrijving:** {func_desc or '—'}\n"]
@@ -483,26 +478,26 @@ def render_job_header_block(job_id, job_body, date_modified, time_modified):
 
 def render_stages(records: dict, out: list) -> None:
     """Rendert alle stages uit een records-dict naar de out-lijst."""
-    for rec_id, (rec_type, rec_body) in records.items():
+    for rec_id, (rec_type, rec_elem) in records.items():
         if rec_type in SKIP_TYPES: continue
-        stage_name = prop(rec_body, 'Name') or rec_id
-        stage_type = prop(rec_body, 'StageType') or rec_type
+        stage_name = prop(rec_elem, 'Name') or rec_id
+        stage_type = prop(rec_elem, 'StageType') or rec_type
 
         if stage_type == 'OracleConnectorPX' or rec_type == 'PxOracleConnector':
-            out.append(render_oracle(stage_name, rec_body))
+            out.append(render_oracle(stage_name, rec_elem))
         elif stage_type in ('PxTransformer', 'Transformer') or rec_type == 'TransformerStage':
-            trx = prop(rec_body, 'TransformCode') or ''
+            trx = prop(rec_elem, 'TransformCode') or ''
             out.append(f"\n### {stage_name} — Transformer")
             if trx: out.append(f"```\n{trx}\n```")
             out.append("")
         elif stage_type == 'PxJoin':
-            out.append(render_pxjoin(stage_name, rec_body))
+            out.append(render_pxjoin(stage_name, rec_elem))
         elif stage_type == 'PxAggregator':
-            out.append(render_pxagg(stage_name, rec_body))
+            out.append(render_pxagg(stage_name, rec_elem))
         elif stage_type == 'PxSort':
-            out.append(render_pxsort(stage_name, rec_body))
+            out.append(render_pxsort(stage_name, rec_elem))
         elif stage_type == 'PxModify':
-            out.append(render_pxmodify(stage_name, rec_body))
+            out.append(render_pxmodify(stage_name, rec_elem))
         elif stage_type in ('PxRemDup',):
             out.append(f"\n### {stage_name} — Remove Duplicates\n")
         elif stage_type in ('PxCopy',):
@@ -510,7 +505,7 @@ def render_stages(records: dict, out: list) -> None:
         elif stage_type in ('PxLookup',):
             out.append(f"\n### {stage_name} — Lookup\n")
         elif stage_type in ('PxPeek', 'Peek'):
-            xp  = get_xmlprops_tree(rec_body)
+            xp  = get_xmlprops_tree(rec_elem)
             out.append(f"\n### {stage_name} — Peek")
             if xp is not None:
                 cnt = xprop(xp, 'RecordCount')
@@ -519,20 +514,21 @@ def render_stages(records: dict, out: list) -> None:
                 if fn:  out.append(f"**Bestand:** `{fn}`")
             out.append("")
         elif rec_type == 'ContainerStage':
-            out.append(render_containerstage(stage_name, rec_body))
+            out.append(render_containerstage(stage_name, rec_elem))
         elif rec_type not in SKIP_TYPES:
             out.append(f"\n### {stage_name} — {stage_type}\n")
 
 
-def render_container(container_name, sc_body, date_modified='?'):
+def render_container(container_name, sc_elem, date_modified='?'):
     """Rendert een SharedContainer als een parallel job sectie."""
-    # Haal de ContainerDefn metadata op
-    defn_m = re.search(r'<Record Identifier="ROOT" Type="ContainerDefn"[^>]*>(.*?)</Record>', sc_body, re.DOTALL)
+    defn_rec = sc_elem.find("Record[@Identifier='ROOT'][@Type='ContainerDefn']")
     raw_desc = ''
-    if defn_m:
-        defn_body = defn_m.group(1)
-        raw_desc = prop(defn_body, 'Description') or prop(defn_body, 'FullDescription') or ''
-        raw_desc = html.unescape(re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw_desc, flags=re.DOTALL)).strip()
+    if defn_rec is not None:
+        raw_desc = (
+            prop(defn_rec, 'Description')
+            or prop(defn_rec, 'FullDescription')
+            or ''
+        )
 
     func_desc, hist = parse_description(raw_desc)
     anchor = make_anchor(container_name)
@@ -546,53 +542,52 @@ def render_container(container_name, sc_body, date_modified='?'):
 
     out.append(f"**Laatste wijziging:** {date_modified}\n")
 
-    # Annotaties
-    anns = get_annotations(sc_body)
+    anns = get_annotations(sc_elem)
     for ann in anns:
         if ann.strip():
             out.append(f"*{ann}*\n")
 
     out.append("## Stages\n")
-    render_stages(get_records(sc_body), out)
+    render_stages(get_records(sc_elem), out)
     return '\n'.join(out)
 
 
-def render_parallel_job(job_id, job_body, date_modified, time_modified):
-    out = render_job_header_block(job_id, job_body, date_modified, time_modified)
+def render_parallel_job(job_id, job_elem, date_modified, time_modified):
+    out = render_job_header_block(job_id, job_elem, date_modified, time_modified)
     out.append("## Stages\n")
-    render_stages(get_records(job_body), out)
+    render_stages(get_records(job_elem), out)
     return '\n'.join(out)
 
 
 # ── Sequencer job renderer ────────────────────────────────────────────────────
 
-def render_sequencer_job(job_id, job_body, date_modified, time_modified):
-    out = render_job_header_block(job_id, job_body, date_modified, time_modified)
-    records = get_records(job_body)
+def render_sequencer_job(job_id, job_elem, date_modified, time_modified):
+    out = render_job_header_block(job_id, job_elem, date_modified, time_modified)
+    records = get_records(job_elem)
     out.append("## Uitvoeringsvolgorde\n")
 
-    id_to_name = {rid: (prop(rb, 'Name') or rid) for rid, (_, rb) in records.items()}
+    id_to_name = {rid: (prop(elem, 'Name') or rid) for rid, (_, elem) in records.items()}
     step = 1
 
-    for rec_id, (rec_type, rec_body) in records.items():
-        rec_name = prop(rec_body, 'Name') or rec_id
+    for rec_id, (rec_type, rec_elem) in records.items():
+        rec_name = prop(rec_elem, 'Name') or rec_id
 
         if rec_type == 'JSJobActivity':
-            jobname = prop(rec_body, 'Jobname') or rec_name
+            jobname = prop(rec_elem, 'Jobname') or rec_name
             out.append(f"### Stap {step}: {rec_name}"); step += 1
             out.append(f"**Aanroept job:** `{jobname}`")
 
             param_vals = []
-            for sub in re.finditer(r'<SubRecord>(.*?)</SubRecord>', rec_body, re.DOTALL):
-                sb = sub.group(1)
-                pn = prop(sb, 'Name'); pv = prop(sb, 'DisplayValue')
+            for sub in rec_elem.findall('SubRecord'):
+                pn = prop(sub, 'Name')
+                pv = prop(sub, 'DisplayValue')
                 if not pn or not pv: continue
                 if pn.startswith('$'): continue
                 if pv in ('#uvr_Info.uvJobname#_#uvr_Info.uvSchemaPostfix#','(As pre-defined)'): continue
                 param_vals.append(f"{pn}={pv}")
             if param_vals: out.append(f"**Parameters:** {', '.join(param_vals)}")
 
-            for pin_id in prop(rec_body, 'OutputPins').split('|'):
+            for pin_id in prop(rec_elem, 'OutputPins').split('|'):
                 pin_id = pin_id.strip()
                 if pin_id not in records: continue
                 _, pb = records[pin_id]
@@ -603,16 +598,16 @@ def render_sequencer_job(job_id, job_body, date_modified, time_modified):
             out.append("")
 
         elif rec_type == 'JSSequencer':
-            seq_type = prop(rec_body, 'SequencerType')
+            seq_type = prop(rec_elem, 'SequencerType')
             gate = ('AND-gate (wacht op alle inputs)' if seq_type == '1' else
                     'OR-gate (gaat door bij eerste input)' if seq_type == '0' else seq_type)
             input_names = []
-            for pin_id in prop(rec_body, 'InputPins').split('|'):
+            for pin_id in prop(rec_elem, 'InputPins').split('|'):
                 pin_id = pin_id.strip()
                 if pin_id in records:
                     _, pb = records[pin_id]; input_names.append(prop(pb, 'Name') or pin_id)
             next_steps = []
-            for pin_id in prop(rec_body, 'OutputPins').split('|'):
+            for pin_id in prop(rec_elem, 'OutputPins').split('|'):
                 pin_id = pin_id.strip()
                 if pin_id not in records: continue
                 _, pb = records[pin_id]
@@ -637,29 +632,35 @@ def main():
 
     xml_path = find_xml_file()
     content  = read_xml(xml_path)
-    validate_dse(content, xml_path)
 
-    hm          = re.search(r'<Header[^>]+Date="([^"]+)"', content)
-    export_date = hm.group(1) if hm else '?'
-    jobs        = split_jobs(content)
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as e:
+        log.error("XML kan niet worden geparsed: %s", e)
+        log.error("Conversie afgebroken voor: %s", xml_path.name)
+        sys.exit(1)
+
+    validate_dse(root, xml_path)
+
+    header      = root.find('Header')
+    export_date = header.get('Date', '?') if header is not None else root.get('Date', '?')
+    jobs        = split_jobs(root)
     log.info("Jobs verwerken: %d totaal", len(jobs))
 
     parallel_jobs, sequencer_jobs = [], []
-    for job_id, job_type, job_body in jobs:
-        dm = re.search(rf'<Job Identifier="{re.escape(job_id)}"[^>]*DateModified="([^"]+)"', content)
-        tm = re.search(rf'<Job Identifier="{re.escape(job_id)}"[^>]*TimeModified="([^"]+)"', content)
-        date_mod = dm.group(1) if dm else '?'
-        time_mod = tm.group(1) if tm else '?'
+    for job_id, job_type, job_elem in jobs:
+        date_mod = job_elem.get('DateModified', '?')
+        time_mod = job_elem.get('TimeModified', '?')
 
-        # JobType="2" = sequencer, JSJobActivity = sequencer stap
-        is_seq = job_type == '2' or bool(re.search(r'Type="JSJobActivity"', job_body))
+        is_seq = job_type == '2' or any(
+            rec.get('Type') == 'JSJobActivity' for rec in job_elem.findall('Record')
+        )
         if is_seq:
-            sequencer_jobs.append((job_id, job_body, date_mod, time_mod))
+            sequencer_jobs.append((job_id, job_elem, date_mod, time_mod))
         else:
-            parallel_jobs.append((job_id, job_body, date_mod, time_mod))
+            parallel_jobs.append((job_id, job_elem, date_mod, time_mod))
 
-    # Shared containers (buiten Job blokken)
-    container_jobs = split_containers(content)
+    container_jobs = split_containers(root)
     for cname, *_ in container_jobs:
         log.info("  Container : %s", cname)
 
@@ -687,21 +688,21 @@ def main():
 
     if sequencer_jobs:
         lines.append("# Sequencer-jobs\n")
-        for job_id, job_body, dm, tm in sequencer_jobs:
+        for job_id, job_elem, dm, tm in sequencer_jobs:
             log.info("  Sequencer: %s", job_id)
-            lines.append(render_sequencer_job(job_id, job_body, dm, tm))
+            lines.append(render_sequencer_job(job_id, job_elem, dm, tm))
             lines.append("\n---\n")
 
     lines.append("# Parallel jobs\n")
-    for job_id, job_body, dm, tm in parallel_jobs:
+    for job_id, job_elem, dm, tm in parallel_jobs:
         log.info("  Parallel : %s", job_id)
-        lines.append(render_parallel_job(job_id, job_body, dm, tm))
+        lines.append(render_parallel_job(job_id, job_elem, dm, tm))
         lines.append("\n---\n")
 
     if container_jobs:
         lines.append("# Generieke containers\n")
-        for cname, date_mod, sc_body in container_jobs:
-            lines.append(render_container(cname, sc_body, date_mod))
+        for cname, date_mod, sc_elem in container_jobs:
+            lines.append(render_container(cname, sc_elem, date_mod))
             lines.append("\n---\n")
 
     md_text     = '\n'.join(lines)

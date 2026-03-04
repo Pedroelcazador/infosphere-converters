@@ -13,6 +13,7 @@ Output : <bestandsnaam>_Flow.html  +  ds_flow.log
 import re, html as htmllib, sys, logging, json, importlib.util
 from collections import deque
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 _ds_path = Path(__file__).resolve().parent.parent / 'ds_convert' / 'ds_convert.py'
 _ds_spec = importlib.util.spec_from_file_location('ds_convert', _ds_path)
@@ -67,21 +68,17 @@ RTYPE_KIND = {
 
 # ── Parallel job details ──────────────────────────────────────────────────────
 
-def extract_par_details(job_body):
-    records = {
-        m.group(1): (m.group(2), m.group(3))
-        for m in re.finditer(
-            r'<Record Identifier="([^"]+)" Type="([^"]+)"[^>]*>(.*?)</Record>',
-            job_body, re.DOTALL)
-    }
+def extract_par_details(job_elem):
     stages = []
-    for rid, (rtype, rbody) in records.items():
-        stage_type = ds.prop(rbody, 'StageType') or rtype
+    for rec in job_elem.findall('Record'):
+        rtype      = rec.get('Type', '')
+        rid        = rec.get('Identifier', '')
+        stage_type = ds.prop(rec, 'StageType') or rtype
         if stage_type != 'OracleConnectorPX':
             continue
-        name = ds.prop(rbody, 'Name') or rid
-        mode = 'TARGET' if ds.prop(rbody, 'InputPins') else 'SOURCE'
-        xp   = ds.get_xmlprops_tree(rbody)
+        name = ds.prop(rec, 'Name') or rid
+        mode = 'TARGET' if ds.prop(rec, 'InputPins') else 'SOURCE'
+        xp   = ds.get_xmlprops_tree(rec)
         info = {'name': name, 'mode': mode,
                 'sql': '', 'table': '', 'writemode': '',
                 'before_sql': '', 'after_sql': '',
@@ -106,28 +103,24 @@ def extract_par_details(job_body):
 
 # ── Sequencer parsen ──────────────────────────────────────────────────────────
 
-def parse_sequencer(job_id, job_body, par_bodies):
+def parse_sequencer(job_id, job_elem, par_elems):
     records = {
-        m.group(1): (m.group(2), m.group(3))
-        for m in re.finditer(
-            r'<Record Identifier="([^"]+)" Type="([^"]+)"[^>]*>(.*?)</Record>',
-            job_body, re.DOTALL)
+        rec.get('Identifier', ''): (rec.get('Type', ''), rec)
+        for rec in job_elem.findall('Record')
     }
 
     # Beschrijving uit ROOT
     desc = ''
-    root_m = re.search(r'<Record Identifier="ROOT"[^>]*>(.*?)</Record>', job_body, re.DOTALL)
-    if root_m:
-        raw = ds.prop(root_m.group(1), 'Description') or ''
-        raw = htmllib.unescape(
-            re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw, flags=re.DOTALL)).strip()
+    root_rec = job_elem.find("Record[@Identifier='ROOT']")
+    if root_rec is not None:
+        raw = ds.prop(root_rec, 'Description') or ''
         func_desc, _ = ds.parse_description(raw)
         desc = func_desc or ''
 
     # pin → stage map
     pin_to_stage = {}
-    for rid, (rtype, rbody) in records.items():
-        for pid in (ds.prop(rbody, 'InputPins') + '|' + ds.prop(rbody, 'OutputPins')).split('|'):
+    for rid, (rtype, rec) in records.items():
+        for pid in (ds.prop(rec, 'InputPins') + '|' + ds.prop(rec, 'OutputPins')).split('|'):
             pid = pid.strip()
             if pid:
                 pin_to_stage[pid] = rid
@@ -135,18 +128,18 @@ def parse_sequencer(job_id, job_body, par_bodies):
     # Links via output-pin Partners (dedupliceer op from/to/cond)
     links   = []
     seen_lk = set()
-    for rid, (rtype, rbody) in records.items():
+    for rid, (rtype, rec) in records.items():
         if rtype not in ('JSActivityOutput', 'CActivityOutput', 'StdOutput'):
             continue
-        partner = ds.prop(rbody, 'Partner')
+        partner = ds.prop(rec, 'Partner')
         if not partner:
             continue
         target  = partner.split('|')[0]
         source  = pin_to_stage.get(rid)
         if not source or source == target:
             continue
-        cond = ds.prop(rbody, 'ConditionType')
-        name = ds.prop(rbody, 'Name') or ''
+        cond = ds.prop(rec, 'ConditionType')
+        name = ds.prop(rec, 'Name') or ''
         key  = (source, target, cond)
         if key in seen_lk:
             continue
@@ -155,20 +148,20 @@ def parse_sequencer(job_id, job_body, par_bodies):
 
     # Nodes
     nodes = {}
-    for rid, (rtype, rbody) in records.items():
+    for rid, (rtype, rec) in records.items():
         if rtype in SKIP_SEQ:
             continue
-        name    = ds.prop(rbody, 'Name') or rid
+        name    = ds.prop(rec, 'Name') or rid
         kind    = RTYPE_KIND.get(rtype, 'other')
-        jobname = ds.prop(rbody, 'Jobname') or ''
+        jobname = ds.prop(rec, 'Jobname') or ''
         gate    = ''
         if kind == 'sync':
-            st   = ds.prop(rbody, 'SequencerType')
+            st   = ds.prop(rec, 'SequencerType')
             gate = 'AND' if st == '1' else 'OR' if st == '0' else '?'
 
         par_stages = []
-        if kind == 'job' and jobname and jobname in par_bodies:
-            par_stages = extract_par_details(par_bodies[jobname])
+        if kind == 'job' and jobname and jobname in par_elems:
+            par_stages = extract_par_details(par_elems[jobname])
 
         nodes[rid] = {
             'id': rid, 'name': name, 'kind': kind,
@@ -214,39 +207,37 @@ def parse_sequencer(job_id, job_body, par_bodies):
 # ── Alle jobs parsen ──────────────────────────────────────────────────────────
 
 def parse_all(content):
-    jobs_raw = list(re.finditer(
-        r'<Job Identifier="([^"]+)"([^>]*?)>(.*?)</Job>', content, re.DOTALL))
+    root = ET.fromstring(content)
+    job_elems = root.findall('Job')
 
-    par_bodies = {}
-    for jm in jobs_raw:
-        jid = jm.group(1)
+    par_elems = {}
+    for job_elem in job_elems:
+        jid = job_elem.get('Identifier', '')
         if not jid.startswith('seq_'):
-            par_bodies[jid] = jm.group(3)
+            par_elems[jid] = job_elem
 
     sequencers = []
-    for jm in jobs_raw:
-        jid      = jm.group(1)
-        job_body = jm.group(3)
+    for job_elem in job_elems:
+        jid = job_elem.get('Identifier', '')
         if not jid.startswith('seq_'):
             continue
-        rtypes = re.findall(r'Type="([^"]+)"', job_body)
+        rtypes = [rec.get('Type', '') for rec in job_elem.findall('Record')]
         if not any(r in ('JSJobActivity','CJobActivity','JSSequencer','CSequencer')
                    for r in rtypes):
             continue
         log.info('  Sequencer: %s', jid)
-        sequencers.append(parse_sequencer(jid, job_body, par_bodies))
+        sequencers.append(parse_sequencer(jid, job_elem, par_elems))
 
     # Fallback: geen sequencers → toon parallel jobs als simpele nodes
     if not sequencers:
         log.info('  Geen sequencers gevonden — parallel jobs als overzicht weergeven')
         nodes = []
-        for jid, body in par_bodies.items():
-            par_stages = extract_par_details(body)
-            root_m = re.search(r'<Record Identifier="ROOT"[^>]*>(.*?)</Record>', body, re.DOTALL)
+        for jid, job_elem in par_elems.items():
+            par_stages = extract_par_details(job_elem)
+            root_rec   = job_elem.find("Record[@Identifier='ROOT']")
             desc = ''
-            if root_m:
-                raw = ds.prop(root_m.group(1), 'Description') or ''
-                raw = htmllib.unescape(re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', raw, flags=re.DOTALL)).strip()
+            if root_rec is not None:
+                raw = ds.prop(root_rec, 'Description') or ''
                 func_desc, _ = ds.parse_description(raw)
                 desc = func_desc or ''
             nodes.append({
@@ -820,10 +811,17 @@ def main():
 
     xml_path = ds.find_xml_file()
     content  = ds.read_xml(xml_path)
-    ds.validate_dse(content, xml_path)
 
-    hm          = re.search(r'<Header[^>]+Date="([^"]+)"', content)
-    export_date = hm.group(1) if hm else '?'
+    try:
+        _root = ET.fromstring(content)
+    except ET.ParseError as e:
+        log.error("XML kan niet worden geparsed: %s", e)
+        sys.exit(1)
+
+    ds.validate_dse(_root, xml_path)
+
+    _header     = _root.find('Header')
+    export_date = _header.get('Date', '?') if _header is not None else _root.get('Date', '?')
     log.info('Export datum: %s', export_date)
 
     log.info('Sequencers/jobs parsen...')

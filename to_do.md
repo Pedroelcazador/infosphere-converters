@@ -1,6 +1,6 @@
 # To-do: verbeterpunten Infosphere Converters
 
-Bijgewerkt op 2026-03-04.
+Bijgewerkt op 2026-03-04 (item 7 opgelost).
 
 ---
 
@@ -56,14 +56,17 @@ Elke nieuwe converter vereist aanpassingen op vijf verschillende plekken in twee
 
 ---
 
-### 7. Regex voor XML-parsing in ds_convert
-**Bestand:** `ds_convert/ds_convert.py`
+### 7. ~~Regex voor XML-parsing in ds_convert~~ ✅ OPGELOST
+**Bestanden:** `ds_convert/ds_convert.py`, `ds_flow/ds_flow.py`
 
-Jobs, Records en Properties worden grotendeels via regex geparsed. Fragiel bij CDATA-secties, attributen op meerdere regels en geneste elementen. `msl_convert.py` en `ldm_convert.py` gebruiken consequent `xml.etree.ElementTree`.
-
-**Oplossing:** vervang regex-based XML-parsing door `ElementTree`, consistent met de andere converters.
-
-**Uitgesteld:** `prop()` wordt 51 keer aangeroepen in 727 regels. Een volledige omzetting raakt elk render-functie en vereist dedicated planning. De huidige regex-aanpak werkt correct voor geldige DataStage DSExport XML. Aanpakken nadat smoke-tests zijn uitgebreid met gevallen die CDATA en multi-line attributen testen.
+`prop()`, `split_jobs()`, `split_containers()`, `get_records()`, `get_job_header()`,
+`get_annotations()`, `get_custom_props()`, `get_xmlprops_tree()` en `validate_dse()`
+gebruiken nu allemaal `xml.etree.ElementTree`. ET handelt CDATA en XML-entities
+transparant af — de CDATA-strips en `html.unescape()`-aanroepen op property-waarden
+zijn verwijderd. `ds_flow.py` bijgewerkt om mee te liften op de nieuwe ET-API.
+Regels die intern de DataStage `\(N)`-notatie parsen (`parse_px_keys`, `parse_px_reduce`,
+`parse_px_modifyspec`) gebruiken bewust regex — dat is geen XML.
+Smoke-tests uitgebreid met CDATA- en HTML-entity-fixtures.
 
 ---
 
@@ -111,7 +114,7 @@ Er is geen test-suite. Converters zijn complexe transformaties waarbij regressie
 | 4 | Middel | `main.py` / `web_ui.py` | Gesplitste converter-registry | ✅ Opgelost |
 | 5 | Middel | `web_ui.py` | Globale state-mutatie (sys.argv / logging) | ✅ Opgelost (sys.argv) |
 | 6 | Middel | `web_ui.py` | Geen uploadlimiet | ✅ Opgelost |
-| 7 | Middel | `ds_convert.py` | Regex i.p.v. XML-parser | ⚠️ Uitgesteld |
+| 7 | Middel | `ds_convert.py`, `ds_flow.py` | Regex i.p.v. XML-parser | ✅ Opgelost |
 | 8 | Middel | `ds_convert.py` | Stage-rendering duplicatie | ✅ Opgelost |
 | 9 | Laag | meerdere bestanden | `make_anchor()` duplicatie | ✅ Opgelost |
 | 10 | Laag | `web_ui.py` | List comprehension als statement | ✅ Opgelost |
