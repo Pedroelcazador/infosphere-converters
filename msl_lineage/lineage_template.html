@@ -84,8 +84,9 @@ svg#lines { position:absolute; top:0; left:0; pointer-events:none; overflow:visi
 .card:hover { box-shadow:0 4px 18px rgba(0,91,154,0.28); }
 
 .card-header {
-  padding:7px 10px; border-radius:4px 4px 0 0; cursor:pointer;
+  padding:7px 10px; border-radius:4px 4px 0 0; cursor:grab;
 }
+.card-header:active { cursor:grabbing; }
 .card.src .card-header { background:#2a7ab8; }
 .card.tgt .card-header { background:#005b9a; }
 .card.sec .card-header { background:#6a9fc8; }
@@ -178,7 +179,7 @@ svg#lines { position:absolute; top:0; left:0; pointer-events:none; overflow:visi
 .detail-table { width:100%; border-collapse:collapse; font-size:10.5px; }
 .detail-table th {
   background:#f0f7ff; color:#005b9a; font-weight:700;
-  padding:4px 7px; text-align:left; border-bottom:1px solid #d0dce8;
+  padding:4px 7px; text-align:left; border-bottom:1px solid #d0d8ee;
 }
 .detail-table td { padding:4px 7px; border-bottom:1px solid #eef2f7; vertical-align:top; }
 .detail-table tr:last-child td { border-bottom:none; }
@@ -215,7 +216,8 @@ svg#lines { position:absolute; top:0; left:0; pointer-events:none; overflow:visi
   </div>
   <div class="sep"></div>
   <input id="search" type="text" placeholder="🔍 Zoek tabel…" oninput="doSearch(this.value)">
-  <button class="btn" onclick="resetHighlight()">✕ Reset</button>
+  <button class="btn" onclick="collapseAll()">▴ Inklappen</button>
+  <button class="btn" onclick="resetAll()">↺ Reset</button>
   <button class="btn" onclick="fitView()">⊡ Fit</button>
 </div>
 
@@ -237,7 +239,7 @@ svg#lines { position:absolute; top:0; left:0; pointer-events:none; overflow:visi
 </div>
 
 <div id="tooltip"></div>
-<div id="info-panel">Klik op een kaart voor details • Hover over lijn voor attribuutinfo • Scroll = zoom • Sleep canvas = pan</div>
+<div id="info-panel">Sleep kaart-header om te verplaatsen • Klik header voor details • Hover lijn voor info • Scroll = zoom • Sleep canvas = pan</div>
 
 <script>
 // ── Data ────────────────────────────────────────────────────────────────────
@@ -256,9 +258,13 @@ const TYPE_COLOR = {
 
 // ── State ───────────────────────────────────────────────────────────────────
 let activeTypes = new Set(['direct','concat','lookup','join','constant']);
-let focusId     = null;   // gehighlight kaart-id
+let focusId     = null;
 let off  = {x:60, y:60}, sc = 0.82;
 let panning = false, ps = {x:0,y:0};
+
+// Kaart-sleep state
+let draggingCard  = null;  // { el, id, isSource, started, startX, startY, origPos }
+const DRAG_THRESHOLD = 5;  // pixels voordat sleep begint
 
 const wrap   = document.getElementById('canvas-wrap');
 const canvas = document.getElementById('canvas');
@@ -266,7 +272,6 @@ const svg    = document.getElementById('lines');
 const tip    = document.getElementById('tooltip');
 
 // ── Layout berekenen ─────────────────────────────────────────────────────────
-// Bronnen links, doelen rechts. Y-positie op basis van aantal verbindingen.
 const COL_SRC_X  = 0;
 const COL_TGT_X  = 420;
 const CARD_W     = 230;
@@ -279,17 +284,21 @@ const srcsSorted = [...SOURCES].sort((a,b) => {
   return b.n_targets - a.n_targets;
 });
 
-// Posities bronnen
-const srcPos = {};
+// Initiële posities (voor reset)
+const initialSrcPos = {};
 srcsSorted.forEach((s, i) => {
-  srcPos[s.id] = { x: COL_SRC_X, y: i * ROW_H_SRC };
+  initialSrcPos[s.id] = { x: COL_SRC_X, y: i * ROW_H_SRC };
+});
+const initialTgtPos = {};
+TARGETS.forEach((t, i) => {
+  initialTgtPos[t.id] = { x: COL_TGT_X, y: i * ROW_H_TGT };
 });
 
-// Posities doelen
+// Huidige (aanpasbare) posities — kopie van initieel
+const srcPos = {};
+srcsSorted.forEach(s => { srcPos[s.id] = { ...initialSrcPos[s.id] }; });
 const tgtPos = {};
-TARGETS.forEach((t, i) => {
-  tgtPos[t.id] = { x: COL_TGT_X, y: i * ROW_H_TGT };
-});
+TARGETS.forEach(t => { tgtPos[t.id] = { ...initialTgtPos[t.id] }; });
 
 // ── DOM-elementen aanmaken ────────────────────────────────────────────────────
 function makeSrcCard(s) {
@@ -313,6 +322,8 @@ function makeSrcCard(s) {
     + ` — ${s.n_attrs} attribuutmappings naar ${s.n_targets} doeltabel(len)`));
   hdr.addEventListener('mouseleave', hideTip);
   el.appendChild(hdr);
+
+  makeDraggable(el, s.id, true);
   canvas.appendChild(el);
 }
 
@@ -326,7 +337,6 @@ function makeTgtCard(t) {
 
   const totalAttrs = t.edges.reduce((s,e) => s+e.count, 0);
 
-  // Header
   const hdr = document.createElement('div');
   hdr.className = 'card-header';
   hdr.innerHTML = `<div class="card-name">${t.id}</div>`
@@ -336,7 +346,8 @@ function makeTgtCard(t) {
   hdr.addEventListener('mousemove', ev => {
     const srcNames = t.edges.map(e=>e.src_id).join(', ');
     showTip(ev, `${t.id}\n${totalAttrs} attributen uit: ${srcNames}`);
-  });  hdr.addEventListener('mouseleave', hideTip);
+  });
+  hdr.addEventListener('mouseleave', hideTip);
   el.appendChild(hdr);
 
   // Attribuutlijst (ingeklapt)
@@ -344,7 +355,6 @@ function makeTgtCard(t) {
   attrWrap.className = 'card-attrs';
   attrWrap.style.display = 'none';
 
-  // Verzamel alle attrs over alle edges
   const allAttrs = [];
   t.edges.forEach(e => {
     e.attrs.forEach(a => allAttrs.push({...a, src_id: e.src_id}));
@@ -372,13 +382,16 @@ function makeTgtCard(t) {
   const tog = document.createElement('div');
   tog.className = 'card-toggle';
   tog.textContent = '▾ attributen tonen';
-  tog.addEventListener('click', () => {
+  tog.addEventListener('click', ev => {
+    ev.stopPropagation();
     const open = attrWrap.style.display !== 'none';
     attrWrap.style.display = open ? 'none' : 'block';
     tog.textContent = open ? '▾ attributen tonen' : '▴ verbergen';
     setTimeout(draw, 60);
   });
   el.appendChild(tog);
+
+  makeDraggable(el, t.id, false);
   canvas.appendChild(el);
 }
 
@@ -386,11 +399,29 @@ function cssId(id) {
   return id.replace(/[^a-zA-Z0-9]/g, '_');
 }
 
+// ── Kaart slepen ──────────────────────────────────────────────────────────────
+function makeDraggable(el, id, isSource) {
+  el.addEventListener('mousedown', ev => {
+    if (ev.button !== 0) return;
+    // Klik op toggle-knop: niet slepen
+    if (ev.target.classList.contains('card-toggle')) return;
+    ev.stopPropagation();  // voorkom canvas-pan
+    const posMap = isSource ? srcPos : tgtPos;
+    draggingCard = {
+      el, id, isSource,
+      started:  false,
+      startX:   ev.clientX,
+      startY:   ev.clientY,
+      origPos:  { ...posMap[id] },
+    };
+  });
+}
+
 // ── SVG verbindingslijnen ─────────────────────────────────────────────────────
 function getCardMidRight(id) {
   const el = document.getElementById('card_' + cssId(id));
   if (!el) return null;
-  const pos = (srcPos[id] || tgtPos[id]);
+  const pos = srcPos[id] || tgtPos[id];
   return { x: pos.x + el.offsetWidth, y: pos.y + el.offsetHeight/2 };
 }
 function getCardMidLeft(id) {
@@ -400,25 +431,22 @@ function getCardMidLeft(id) {
   return { x: pos.x, y: pos.y + el.offsetHeight/2 };
 }
 
-let lineNodes = {};  // key → SVG path element
+let lineNodes = {};
 
 function draw() {
-  // SVG afmeting
-  const mw = COL_TGT_X + CARD_W + 200;
-  const mh = Math.max(
-    srcsSorted.length * ROW_H_SRC,
-    TARGETS.length * ROW_H_TGT
-  ) + 200;
+  // Dynamische SVG-afmeting op basis van huidige kaartposities
+  const allX = [...Object.values(srcPos).map(p=>p.x), ...Object.values(tgtPos).map(p=>p.x)];
+  const allY = [...Object.values(srcPos).map(p=>p.y), ...Object.values(tgtPos).map(p=>p.y)];
+  const mw = (allX.length ? Math.max(...allX) : COL_TGT_X) + CARD_W + 200;
+  const mh = (allY.length ? Math.max(...allY) : 0) + 200;
   svg.setAttribute('width', mw);
   svg.setAttribute('height', mh);
 
-  // Verwijder alle oude lijnen
   while (svg.firstChild) svg.removeChild(svg.firstChild);
   lineNodes = {};
 
   TARGETS.forEach(t => {
     t.edges.forEach(e => {
-      // Filter op actieve types
       const visibleTypes = e.types.filter(ty => activeTypes.has(ty));
       if (!visibleTypes.length) return;
 
@@ -426,19 +454,15 @@ function draw() {
       const p2 = getCardMidLeft(t.id);
       if (!p1 || !p2) return;
 
-      // Bepaal kleur: prioriteit direct > concat > lookup > join > constant
       const prio = ['direct','concat','lookup','join','constant'];
       const dominantType = prio.find(p => visibleTypes.includes(p)) || visibleTypes[0];
       const col = TYPE_COLOR[dominantType];
 
-      // Dimming
       const isActive = !focusId || focusId === e.src_id || focusId === t.id;
       const opacity = isActive ? 0.65 : 0.07;
 
-      // Lijndikte = log van attrs
       const lw = Math.max(1.2, Math.min(4.5, 1.2 + Math.log(e.count + 1) * 0.8));
 
-      // Bezier
       const cpx = (p1.x + p2.x) / 2;
       const d = `M${p1.x},${p1.y} C${cpx},${p1.y} ${cpx},${p2.y} ${p2.x},${p2.y}`;
 
@@ -460,17 +484,13 @@ function draw() {
         );
       });
       path.addEventListener('mouseleave', hideTip);
-
-      // Klik: open detail panel gefilterd op deze edge
       path.addEventListener('click', ev => {
         ev.stopPropagation();
         openDetailFiltered(t, e.src_id);
       });
 
       svg.appendChild(path);
-
-      const key = e.src_id + '|' + t.id;
-      lineNodes[key] = path;
+      lineNodes[e.src_id + '|' + t.id] = path;
     });
   });
 }
@@ -483,7 +503,6 @@ function setFocus(id, kind) {
 }
 
 function applyDim() {
-  // Bron-kaarten
   SOURCES.forEach(s => {
     const el = document.getElementById('card_' + cssId(s.id));
     if (!el) return;
@@ -492,14 +511,12 @@ function applyDim() {
     } else if (s.id === focusId) {
       el.classList.add('highlighted'); el.classList.remove('dimmed');
     } else {
-      // Gerelateerd?
       const related = TARGETS.some(t => t.id === focusId && t.edges.some(e => e.src_id === s.id))
                    || (focusId === s.id);
       el.classList.toggle('dimmed', !related);
       el.classList.toggle('highlighted', false);
     }
   });
-  // Doel-kaarten
   TARGETS.forEach(t => {
     const el = document.getElementById('card_' + cssId(t.id));
     if (!el) return;
@@ -517,9 +534,37 @@ function applyDim() {
 
 function resetHighlight() {
   focusId = null;
-  applyDim(); draw();
+  applyDim();
   document.getElementById('search').value = '';
   document.querySelectorAll('.card').forEach(e => e.classList.remove('search-match'));
+  draw();
+}
+
+// ── Inklappen ─────────────────────────────────────────────────────────────────
+function collapseAll() {
+  document.querySelectorAll('.card-attrs').forEach(a => { a.style.display = 'none'; });
+  document.querySelectorAll('.card-toggle').forEach(t => { t.textContent = '▾ attributen tonen'; });
+  setTimeout(draw, 60);
+}
+
+// ── Volledig reset (highlight + inklappen + posities) ─────────────────────────
+function resetAll() {
+  resetHighlight();
+  collapseAll();
+
+  // Posities herstellen naar beginsituatie
+  srcsSorted.forEach(s => {
+    srcPos[s.id] = { ...initialSrcPos[s.id] };
+    const el = document.getElementById('card_' + cssId(s.id));
+    if (el) { el.style.left = srcPos[s.id].x + 'px'; el.style.top = srcPos[s.id].y + 'px'; }
+  });
+  TARGETS.forEach(t => {
+    tgtPos[t.id] = { ...initialTgtPos[t.id] };
+    const el = document.getElementById('card_' + cssId(t.id));
+    if (el) { el.style.left = tgtPos[t.id].x + 'px'; el.style.top = tgtPos[t.id].y + 'px'; }
+  });
+
+  setTimeout(draw, 60);
 }
 
 // ── Filter ────────────────────────────────────────────────────────────────────
@@ -531,7 +576,6 @@ function toggleType(type) {
   chip.classList.toggle('off', !activeTypes.has(type));
   if (chk) chk.checked = activeTypes.has(type);
 
-  // Verberg attr-rijen die niet actief zijn
   document.querySelectorAll('.attr-row').forEach(row => {
     row.style.display = activeTypes.has(row.dataset.type) ? '' : 'none';
   });
@@ -550,7 +594,6 @@ function doSearch(q) {
     if (el) el.classList.add('search-match');
   });
   if (matches.length) {
-    // Pan naar eerste match
     const firstId = matches[0];
     const pos = srcPos[firstId] || tgtPos[firstId];
     if (pos) {
@@ -578,7 +621,6 @@ function openDetailFiltered(t, filterSrc) {
   const body = document.getElementById('detail-body');
   body.innerHTML = '';
 
-  // Filter-tekst
   if (t.filter) {
     const fn = document.createElement('div');
     fn.className = 'detail-filter-note';
@@ -586,7 +628,6 @@ function openDetailFiltered(t, filterSrc) {
     body.appendChild(fn);
   }
 
-  // Edges (bronnen)
   const edgesToShow = filterSrc ? t.edges.filter(e => e.src_id === filterSrc) : t.edges;
   edgesToShow.forEach(e => {
     const sec = document.createElement('div');
@@ -596,7 +637,6 @@ function openDetailFiltered(t, filterSrc) {
     h4.innerHTML = `<span class="detail-tag" style="background:${e.types[0]?TYPE_COLOR[e.types[0]]:'#888'}">${e.types.join('/')}</span> ${e.src_id}`;
     sec.appendChild(h4);
 
-    // Tabel met attribuutmappings
     const tbl = document.createElement('table');
     tbl.className = 'detail-table';
     tbl.innerHTML = '<thead><tr><th>Doelattribuut</th><th>Bronveld</th><th>Type</th></tr></thead>';
@@ -627,7 +667,7 @@ function openDetailFiltered(t, filterSrc) {
     body.appendChild(sec);
   });
 
-  // Join-condities
+  // Join-condities — resource-prefix weghalen voor leesbaarheid
   if (t.joins.length) {
     const sec = document.createElement('div');
     sec.className = 'detail-section';
@@ -637,7 +677,9 @@ function openDetailFiltered(t, filterSrc) {
     t.joins.forEach(j => {
       const row = document.createElement('div');
       row.className = 'detail-row';
-      row.innerHTML = `<div class="lbl">${j.sources.join(' = ')}</div>`
+      // j.sources zijn paden zoals "$resource0/TABLE" — toon alleen de tabelnaam
+      const srcLabels = j.sources.map(s => s.split('/').pop());
+      row.innerHTML = `<div class="lbl">${srcLabels.join(' = ')}</div>`
         + `<div class="val">${j.fields.length ? j.fields.join(', ') : '(zie notities)'}</div>`;
       sec.appendChild(row);
     });
@@ -645,8 +687,6 @@ function openDetailFiltered(t, filterSrc) {
   }
 
   panel.classList.add('open');
-
-  // Highlight betrokken kaarten
   setFocus(t.id, 'tgt');
 }
 
@@ -679,12 +719,51 @@ wrap.addEventListener('mousedown', ev => {
     ps = {x: ev.clientX - off.x, y: ev.clientY - off.y};
   }
 });
+
 document.addEventListener('mousemove', ev => {
-  if (!panning) return;
-  off = {x: ev.clientX - ps.x, y: ev.clientY - ps.y};
-  applyT();
+  if (panning) {
+    off = {x: ev.clientX - ps.x, y: ev.clientY - ps.y};
+    applyT();
+    return;
+  }
+  if (!draggingCard) return;
+
+  const dx = ev.clientX - draggingCard.startX;
+  const dy = ev.clientY - draggingCard.startY;
+
+  // Drempel: pas bewegen als muis ver genoeg is
+  if (!draggingCard.started && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+
+  if (!draggingCard.started) {
+    draggingCard.started = true;
+    draggingCard.el.style.zIndex = 100;
+    draggingCard.el.style.cursor = 'grabbing';
+  }
+
+  const posMap = draggingCard.isSource ? srcPos : tgtPos;
+  posMap[draggingCard.id] = {
+    x: draggingCard.origPos.x + dx / sc,
+    y: draggingCard.origPos.y + dy / sc,
+  };
+  draggingCard.el.style.left = posMap[draggingCard.id].x + 'px';
+  draggingCard.el.style.top  = posMap[draggingCard.id].y + 'px';
+  draw();
 });
-document.addEventListener('mouseup', () => { panning = false; wrap.classList.remove('panning'); });
+
+document.addEventListener('mouseup', () => {
+  panning = false;
+  wrap.classList.remove('panning');
+  if (draggingCard) {
+    if (draggingCard.started) {
+      // Onderdruk de volgende click op deze kaart (was een sleep, geen klik)
+      draggingCard.el.addEventListener('click', ev => ev.stopPropagation(), { once: true, capture: true });
+    }
+    draggingCard.el.style.zIndex = '';
+    draggingCard.el.style.cursor = '';
+    draggingCard = null;
+  }
+});
+
 wrap.addEventListener('wheel', ev => {
   ev.preventDefault();
   const prev = sc;
@@ -750,7 +829,7 @@ TARGETS.forEach(t => makeTgtCard(t));
 applyT();
 setTimeout(() => { draw(); fitView(); }, 120);
 
-// Klik op achtergrond → reset
+// Klik op achtergrond → reset highlight (maar niet posities)
 canvas.addEventListener('click', ev => {
   if (ev.target === canvas || ev.target === svg) {
     resetHighlight();
