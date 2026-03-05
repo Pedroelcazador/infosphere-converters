@@ -56,6 +56,7 @@ Ondersteunde bestandstypen:
 | DSExport XML (`<DSExport>`) — losse job | DataStage | Documentatie · Job Flow |
 | DSExport XML (`<DSExport>`) — sequence | DataStage | Documentatie · Flow |
 | LDM XML (`logicalModelElement`) | Logisch datamodel | ERD · Datamodel |
+| DBM XML (`<database>`) | Fysiek datamodel | ERD · Datamodel |
 | MSL-bestand (`.msl`) | Attribuutmapping | Mapping · Lineage |
 
 ### Knoppen
@@ -75,7 +76,7 @@ Ondersteunde bestandstypen:
 
 ---
 
-## De zes converters
+## De zeven converters
 
 ### 1. `ds_convert` — DataStage documentatie
 
@@ -134,7 +135,21 @@ Documenteert alle entiteiten en attributen uit een logisch datamodel:
 
 ---
 
-### 5. `msl_convert` — Attribuutmapping
+### 5. `dbm_convert` — Fysiek datamodel
+
+**Input:** IBM Data Architect DBM XML (`.xml`)
+**Output:** `<naam>_Datamodel.md` + `<naam>_Datamodel.html` + `<naam>_ERD.html`
+
+Documenteert alle tabellen en kolommen uit een fysiek datamodel:
+
+- Kolomtabel met datatype, PK, nullable, identity en beschrijving
+- Per schema gegroepeerd in de inhoudsopgave
+- Interactief ERD met drie weergavemodi (None / Keys / All)
+- 🔑 voor primary key-kolommen, ⚙ voor identity-kolommen, ∅ voor nullable kolommen
+
+---
+
+### 6. `msl_convert` — Attribuutmapping
 
 **Input:** IBM Data Architect MSL-bestand (`.msl`)
 **Output:** `<naam>_Mapping.md` + `<naam>_Mapping.html`
@@ -147,7 +162,7 @@ Converteert een mapping specification naar een leesbare attribuuttabel:
 
 ---
 
-### 6. `msl_lineage` — Lineage diagram
+### 7. `msl_lineage` — Lineage diagram
 
 **Input:** IBM Data Architect MSL-bestand (`.msl`)
 **Output:** `<naam>_Lineage.html`
@@ -179,6 +194,7 @@ infosphere-converters/
   ds_flow/
   ds_job_flow/
   ldm_convert/
+  dbm_convert/
   msl_convert/
   msl_lineage/
 ```

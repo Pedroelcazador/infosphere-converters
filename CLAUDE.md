@@ -2,6 +2,8 @@
 
 Toolkit voor het omzetten van IBM InfoSphere DataStage- en IBM Data Architect-exportbestanden naar interactieve HTML en Markdown. Ontwikkeld voor het DIM-team bij UWV. Uitsluitend Python standaardbibliotheek, geen externe packages.
 
+Ondersteunde bestandstypen: DSExport XML (DataStage), LDM XML (logisch datamodel), DBM XML (fysiek datamodel), MSL (attribuutmapping).
+
 ## Startpunten
 
 - **Windows**: `start.bat` (dubbelklik, geen terminalvenster)
@@ -23,6 +25,7 @@ infosphere-converters/
   ds_flow/ds_flow.py
   ds_job_flow/ds_job_flow.py
   ldm_convert/ldm_convert.py
+  dbm_convert/dbm_convert.py
   msl_convert/msl_convert.py
   msl_lineage/msl_lineage.py
   msl_lineage/lineage_template.html  # HTML-template, ingeladen door msl_lineage.py
@@ -37,31 +40,35 @@ Elke converter verwacht:
 - Schrijft output naar `OUTPUT_DIR` (`output/`)
 - Heeft een `main()` functie zonder argumenten
 
-## Converter-registry (web_ui.py)
+## Bestandstype-detectie (web_ui.py)
 
-Vier dicts bepalen het gedrag bij een upload:
+`detect_type()` bepaalt het bestandstype aan de hand van bestandsextensie of XML-inhoud:
 
-```python
-CONVERTERS       # conv_name → pad naar .py bestand
-AUTO_RUN         # bestandstype → lijst van conv_names om uit te voeren
-TAB_LABELS       # conv_name → tabblad-label in de UI
-CONV_OUTPUT_SUFFIX  # conv_name → suffix van het outputbestand
-```
+| Signaal | Bestandstype |
+|---|---|
+| Extensie `.msl` | `msl` |
+| `<DSExport` in eerste 4096 bytes | `dsexport` |
+| `logicalModelElement` in eerste 4096 bytes | `ldm` |
+| `<database` in eerste 4096 bytes | `dbm` |
 
-`ldm_datamodel` is een tab-only entry (geen eigen script): `ldm_convert` genereert zowel `_ERD.html` als `_Datamodel.html`. De registry-entry zonder CONVERTERS-pad zorgt puur voor het tabblad.
+## Converter-registry (converters.py)
 
-Nieuwe converter toevoegen: aanpassen in alle vier dicts én in `main.py` (MENU).
+De registry is gecentraliseerd in `converters.py` en bevat per converter:
+- `name` — interne sleutel
+- `script` — pad naar het `.py`-bestand (`None` = tab-only)
+- `menu_label` — label in het CLI-menu (`None` = niet in menu)
+- `file_type` — koppeling aan het gedetecteerde bestandstype
+- `tab_label` — tabblad-label in de web UI
+- `output_suffix` — suffix van het outputbestand
+
+Tab-only entries (bijv. `ldm_datamodel`, `dbm_datamodel`) hebben `script=None`: het bijbehorende hoofdscript genereert dit bestand, de entry zorgt puur voor het tabblad in de UI.
+
+Nieuwe converter toevoegen: één entry in `converters.py` (REGISTRY). `main.py` en `web_ui.py` lezen de registry automatisch.
 
 ## Bekende valkuilen
 
 **Namespace package conflict**
-`ROOT_DIR` staat in `sys.path` (toegevoegd door `web_ui.py`). Hierdoor kan Python de submap `msl_convert/` importeren als namespace package i.p.v. `msl_convert/msl_convert.py`. Workaround in `msl_lineage.py` en `ds_flow.py`:
-```python
-sys.modules.pop('msl_convert', None)          # verwijder stale namespace package
-sys.path.insert(0, str(ROOT_DIR / 'msl_convert'))
-from msl_convert import find_msl_file, ...
-```
-Dit is functioneel correct maar niet thread-safe. Zie `to_do.md` item #3 voor de structurele oplossing.
+`ROOT_DIR` staat in `sys.path` (toegevoegd door `web_ui.py`). Hierdoor kan Python de submap `msl_convert/` importeren als namespace package i.p.v. `msl_convert/msl_convert.py`. Workaround in `msl_lineage.py` en `ds_flow.py`: laden via `importlib.util.spec_from_file_location()` + `exec_module()`.
 
 **sys.argv en logging zijn globale state**
 `web_ui.py` muteert `sys.argv` en `logging.root.handlers` tijdelijk tijdens conversie. Werkt correct zolang de server single-threaded is (`HTTPServer`, niet `ThreadingHTTPServer`).
@@ -72,9 +79,12 @@ Pas `web_ui_template.html` of `msl_lineage/lineage_template.html` aan voor UI-wi
 **Placeholders in lineage_template.html**
 De template gebruikt `.replace()` (niet `.format()`): `{title}`, `{sources_json}`, `{targets_json}`, `{meta_json}`. Gewone `{` en `}` in de HTML/JS hoeven niet ge-escaped te worden.
 
+**ERD-templates in ldm_convert en dbm_convert**
+Beide converters bevatten een inline ERD-template als Python raw string (`ERD_TEMPLATE = r"""..."""`). Alle `{` en `}` in de HTML/JS zijn ge-escaped als `{{` en `}}`, zodat `.format()` ze niet verstoort.
+
 ## Open verbeterpunten
 
 Zie `to_do.md` voor de volledige lijst. Belangrijkste open punten:
-- `ds_convert.py` gebruikt regex voor XML-parsing (fragiel) in plaats van `ElementTree`
-- Converter-registry is gesplitst over `main.py` en `web_ui.py`
-- Geen geautomatiseerde tests
+- Globale state-mutatie `logging.root.handlers` in `web_ui.py` (niet thread-safe)
+- Stage-rendering duplicatie in `ds_convert.py`
+- DataStage Linter (`ds_linter`) nog te implementeren
