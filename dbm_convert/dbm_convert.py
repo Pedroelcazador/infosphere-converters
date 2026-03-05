@@ -131,9 +131,8 @@ def parse_model(root: ET.Element) -> dict:
                 col_name  = col.get('name', '')
                 col_label = get_prop(col, 'Label')
                 col_desc  = get_prop(col, 'Description')
-                col_dtype = get_prop(col, 'Data Type')
+                col_dtype = re.sub(r'\s+(CHAR|BYTE)\b', '', get_prop(col, 'Data Type'))
                 col_pk    = get_prop(col, 'Is Primary Key') == 'true'
-                col_ident = get_prop(col, 'Is Identity') == 'true'
                 col_null  = get_prop(col, 'Is Nullable') != 'false'  # false = verplicht
                 col_deflt = get_prop(col, 'Default Value')
                 if col_deflt.lower() == 'none':
@@ -144,7 +143,6 @@ def parse_model(root: ET.Element) -> dict:
                     'label':    col_label,
                     'datatype': col_dtype,
                     'pk':       col_pk,
-                    'identity': col_ident,
                     'nullable': col_null,
                     'default':  col_deflt,
                     'description': col_desc,
@@ -305,7 +303,6 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
   .attr-row:last-child {{ border-bottom:none; }}
   .attr-row:hover {{ background:#f0f7ff; }}
   .attr-pk {{ color:#004a80; font-weight:700; }}
-  .attr-id {{ color:#005530; font-weight:600; }}
   .attr-normal {{ color:#334455; }}
   .attr-name {{ flex:1; }}
   .attr-type {{ color:#8899aa; font-size:9px; font-family:'Courier New',monospace; white-space:nowrap; }}
@@ -361,7 +358,7 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
   </div>
   <div id="legend">
     <div class="leg"><span>🔑 PK</span></div>
-    <div class="leg"><span>∅ nullable</span></div>
+    <div class="leg"><span>∅ nullable kolom</span></div>
   </div>
   <div id="search-wrap">
     <input id="search" type="text" placeholder="🔍 Zoek tabel…" autocomplete="off">
@@ -610,8 +607,8 @@ function setMode(mode) {{
 
 function makeAttrRow(a) {{
   const row=document.createElement('div'); row.className='attr-row';
-  const icon=a.pk?'🔑 ':a.identity?'⚙ ':'';
-  const cls=a.pk?'attr-pk':a.identity?'attr-id':'attr-normal';
+  const icon=a.pk?'🔑 ':'';
+  const cls=a.pk?'attr-pk':'attr-normal';
   const nullMark=a.nullable?'<span class="attr-null">∅</span>':'';
   row.innerHTML=`<span class="attr-name ${{cls}}">${{icon}}${{a.name}}</span>`
                +`<span class="attr-type">${{a.dtype}}</span>`+nullMark;
@@ -666,7 +663,6 @@ def render_erd(model: dict) -> str:
                 'name':     c['name'],
                 'dtype':    c['datatype'],
                 'pk':       c['pk'],
-                'identity': c['identity'],
                 'nullable': c['nullable'],
                 'desc':     c['description'][:150] + ('…' if len(c['description']) > 150 else ''),
             })
@@ -756,15 +752,14 @@ def render_markdown(model: dict) -> str:
 
         if t['columns']:
             lines.append("### Kolommen\n")
-            lines.append("| Naam | Datatype | PK | Nullable | Identity | Beschrijving |")
-            lines.append("|---|---|:---:|:---:|:---:|---|")
+            lines.append("| Naam | Datatype | PK | Nullable | Beschrijving |")
+            lines.append("|---|---|:---:|:---:|---|")
             for c in t['columns']:
                 desc = escape_md(c['description'][:120] + ('…' if len(c['description']) > 120 else ''))
                 lines.append(
                     f"| **{escape_md(c['name'])}** | `{c['datatype']}` "
                     f"| {'✓' if c['pk'] else ''} "
                     f"| {'✓' if c['nullable'] else ''} "
-                    f"| {'✓' if c['identity'] else ''} "
                     f"| {desc} |"
                 )
             lines.append("")
