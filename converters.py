@@ -59,6 +59,22 @@ REGISTRY = [
         'output_suffix': '_Datamodel.html',
     },
     {
+        'name':          'dbm_convert',
+        'script':        ROOT_DIR / 'dbm_convert' / 'dbm_convert.py',
+        'menu_label':    'DBM → Datamodel (Markdown + HTML + ERD)',
+        'file_type':     'dbm',
+        'tab_label':     'ERD',
+        'output_suffix': '_ERD.html',
+    },
+    {
+        'name':          'dbm_datamodel',
+        'script':        None,   # tab-only: dbm_convert produceert dit bestand ook
+        'menu_label':    None,   # niet in CLI-menu
+        'file_type':     'dbm',
+        'tab_label':     'Datamodel',
+        'output_suffix': '_Datamodel.html',
+    },
+    {
         'name':          'msl_convert',
         'script':        ROOT_DIR / 'msl_convert' / 'msl_convert.py',
         'menu_label':    'MSL → Attribuutmapping (Markdown + HTML)',

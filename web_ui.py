@@ -76,6 +76,8 @@ def detect_type(content: bytes, filename: str) -> str:
         return "dsexport"
     if "logicalModelElement" in text:
         return "ldm"
+    if text.lstrip().startswith("<database") or '<database ' in text or text.lstrip().startswith("<database>"):
+        return "dbm"
     return "unknown"
 
 
