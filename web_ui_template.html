@@ -10,6 +10,7 @@ body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;
 #logo{font-size:17px;font-weight:700;background:#fff;color:#005b9a;padding:2px 9px;border-radius:3px}
 #hdr h1{font-size:14px;font-weight:400;color:#cce0f5}
 #hdr h1 strong{color:#fff;font-weight:700}
+#version{font-size:10px;color:rgba(255,255,255,.45);font-family:'Courier New',monospace;margin-left:6px}
 #hdr-status{margin-left:auto;font-size:11px;color:rgba(255,255,255,.6)}
 .hbtn{padding:5px 11px;border-radius:4px;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .hbtn:hover{background:rgba(255,255,255,.22)}
@@ -57,7 +58,7 @@ body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;
 <body>
 <div id="hdr">
   <div id="logo">UWV</div>
-  <h1><strong>Infosphere Converters</strong> — Web Interface</h1>
+  <h1><strong>Infosphere Converters</strong> — Web Interface <span id="version">{{VERSION}}</span></h1>
   <span id="hdr-status">Klaar</span>
   <button class="hbtn" onclick="resetSession()" title="Verwijder inputbestanden voor een nieuwe sessie">🗑 Nieuwe sessie</button>
   <button class="hbtn" onclick="window.open('/readme','_blank')" title="Documentatie">? Help</button>
@@ -66,7 +67,7 @@ body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;
   <div id="drop-area" onclick="document.getElementById('file-input').click()">
     <div id="drop-icon">📂</div>
     <div id="drop-text"><strong>Sleep een bestand hiernaartoe</strong> of klik om te kiezen</div>
-    <div id="drop-sub">Ondersteund: DataStage DSExport XML · IBM LDM XML · MSL</div>
+    <div id="drop-sub">Ondersteund: DataStage DSExport XML · IBM LDM XML · IBM DBM XML · MSL</div>
     <div id="spinner"><div class="spin"></div><span id="spin-txt">Converteren…</span></div>
   </div>
   <input type="file" id="file-input" accept=".xml,.msl">

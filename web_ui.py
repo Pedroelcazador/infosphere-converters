@@ -283,7 +283,8 @@ class Handler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 # UI HTML
 # ---------------------------------------------------------------------------
-UI_HTML = (ROOT_DIR / 'web_ui_template.html').read_text(encoding='utf-8')
+from version import VERSION as _VERSION
+UI_HTML = (ROOT_DIR / 'web_ui_template.html').read_text(encoding='utf-8').replace('{{VERSION}}', _VERSION)
 
 
 # ---------------------------------------------------------------------------
