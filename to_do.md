@@ -1,6 +1,6 @@
 # To-do: verbeterpunten Infosphere Converters
 
-Bijgewerkt op 2026-03-04 (items 8, 9, 11 opgelost; item 12 toegevoegd).
+Bijgewerkt op 2026-03-05 (item 13 toegevoegd).
 
 ---
 
@@ -136,6 +136,46 @@ Nieuwe module die actieve kwaliteitscontroles (QA) uitvoert op geëxporteerde Da
 
 ---
 
+### 13. Interne job flow bekijken vanuit sequencer-view
+**Bestanden:** `ds_flow/ds_flow.py` (uitbreiding)
+
+Wanneer een sequencer-export ook de definities van de aangeroepen parallel jobs bevat, is het niet mogelijk om de interne stage-diagram van een individuele job te bekijken vanuit de sequencer-view.
+
+**Voorkeur aanpak (Optie A — alles in één HTML):**
+`ds_flow.py` genereert naast de sequencer-tab(s) ook een tab per parallel job, met de interne stage-diagram (op basis van de logica in `ds_job_flow.py`). Alles in één HTML-bestand; de gebruiker navigeert met één klik van de sequencer-view naar een job-view.
+
+**Alternatieve aanpakken:**
+- **Optie B:** "Bekijk job flow"-knop in het detail-paneel opent een apart gegenereerd `_JobFlow.html` per job in een nieuw browservenster. Minder code in `ds_flow.py`, maar produceert meerdere losse bestanden.
+- **Optie C:** Aparte converter-run in de web UI (`ds_job_flow.py` uitbreiden voor meerdere jobs tegelijk, met dropdown-selector). Minste wijziging in `ds_flow.py`, maar vereist uitbreiding van `ds_job_flow.py` en de converter-registry.
+
+**Openstaande vragen vóór implementatie:**
+- Welke aanpak heeft voorkeur (A, B of C)?
+- Bij Optie A: aparte tabgroep voor job-flows, of mixed in de huidige sequencer-tab-balk?
+- Alleen jobs met OracleConnectorPX-stages tonen, of álle parallel jobs?
+
+---
+
+## Bewust niet opgepakt
+
+De onderstaande punten zijn bekende architectuurkwesties. Ze zijn beoordeeld en bewust buiten scope gehouden zolang de huidige context (intern, single-user, stabiel) niet verandert.
+
+### A. `__init__.py` ontbreekt in converter-mappen
+Converter-mappen (`ds_convert/`, `msl_convert/`, etc.) hebben geen `__init__.py`. Python 3.3+ behandelt ze daardoor als *implicit namespace packages*, wat een naming conflict veroorzaakt als `ROOT_DIR` in `sys.path` staat. Huidig workaround: `importlib.util.spec_from_file_location()` in `web_ui.py`.
+
+**Waarom niet opgepakt:** vereist refactoring van de laadroutine in `web_ui.py` met nul zichtbaar voordeel voor de gebruiker. Oppakken als de codebase flink wordt uitgebreid of als het conflict daadwerkelijk problemen geeft.
+
+### B. `subprocess.run()` in `main.py`
+Het CLI-menu start converters als losse subprocessen. `web_ui.py` gebruikt daarentegen `importlib`. Inconsistent, maar niet problematisch.
+
+**Waarom niet opgepakt:** de CLI is de secundaire interface. Subprocess-isolatie heeft zelfs een voordeel: een crashende converter gooit het menu niet omver. Overstappen naar importlib voegt niets toe.
+
+### C. Globale state-mutatie in `web_ui.py`
+`logging.root.handlers` wordt tijdelijk aangepast tijdens een conversie. Niet thread-safe.
+
+**Waarom niet opgepakt:** `HTTPServer` is single-threaded, één gebruiker tegelijk. Pas relevant als de server ooit multi-threaded wordt — dat staat niet op de roadmap. Bij scope-verandering: geef logging-context mee als parameter i.p.v. globale state te muteren.
+
+---
+
 ## Overzicht
 
 | # | Prioriteit | Bestand | Omschrijving | Status |
@@ -152,3 +192,4 @@ Nieuwe module die actieve kwaliteitscontroles (QA) uitvoert op geëxporteerde Da
 | 10 | Laag | `web_ui.py` | List comprehension als statement | ✅ Opgelost |
 | 11 | Laag | — | Geen tests | ✅ Opgelost |
 | 12 | Uitbreiding | `ds_linter/ds_linter.py` | DataStage Linter / QA-rapport | ⏳ Checklist verzamelen |
+| 13 | Uitbreiding | `ds_flow/ds_flow.py` | Interne job flow bekijken vanuit sequencer-view | ⏳ Aanpak kiezen |
