@@ -7,7 +7,8 @@ Toolkit voor het omzetten van IBM InfoSphere DataStage- en IBM Data Architect-ex
 - **Single-user, single-threaded.** De webserver (`HTTPServer`) is niet multi-threaded. Dat is geen omissie — de tool is bedoeld voor gebruik door één persoon tegelijk.
 - **Geen externe packages.** UWV-werkstations hebben beperkte internettoegang en pip-installaties zijn administratief complex. De tool werkt out-of-the-box met alleen Python 3.10+.
 - **Geen batchverwerking.** Bewust één bestand per sessie; scope is documentatie-op-aanvraag.
-- **`importlib`-laden van converters.** Niet een hack om een ontbrekende package-structuur te omzeilen, maar de oplossing voor een specifiek namespace-package conflict: `ROOT_DIR` in `sys.path` zorgt ervoor dat submappen als namespace packages worden opgepikt. `importlib.util.spec_from_file_location()` omzeilt dit correct.
+- **`importlib`-laden van converters (web_ui.py).** De converter-mappen hebben geen `__init__.py`. Vanaf Python 3.3 worden zulke mappen behandeld als *implicit namespace packages*: een `from msl_convert import ...` pikt de submap op in plaats van het script. `importlib.util.spec_from_file_location()` omzeilt dit correct. Alternatief zou zijn om lege `__init__.py` bestanden toe te voegen — dat lost het conflict structureel op maar is niet geïmplementeerd.
+- **`main.py` gebruikt `subprocess.run()`.** Het CLI-menu start converters als losse subprocessen (`subprocess.run([sys.executable, script_path])`). Eenvoudig en geïsoleerd; foutafhandeling via returncode. `web_ui.py` gebruikt daarentegen importlib (zie boven).
 - **Globale state (`sys.argv`, logging handlers).** Tijdelijke mutatie in `web_ui.py` tijdens conversie. Niet thread-safe, maar irrelevant voor single-threaded gebruik. Staat op de lijst als tech debt.
 
 Ondersteunde bestandstypen: DSExport XML (DataStage), LDM XML (logisch datamodel), DBM XML (fysiek datamodel), MSL (attribuutmapping).
