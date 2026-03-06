@@ -2,6 +2,14 @@
 
 Toolkit voor het omzetten van IBM InfoSphere DataStage- en IBM Data Architect-exportbestanden naar interactieve HTML en Markdown. Ontwikkeld voor het DIM-team bij UWV. Uitsluitend Python standaardbibliotheek, geen externe packages.
 
+## Ontwerpcontext (bewuste keuzes)
+
+- **Single-user, single-threaded.** De webserver (`HTTPServer`) is niet multi-threaded. Dat is geen omissie — de tool is bedoeld voor gebruik door één persoon tegelijk.
+- **Geen externe packages.** UWV-werkstations hebben beperkte internettoegang en pip-installaties zijn administratief complex. De tool werkt out-of-the-box met alleen Python 3.10+.
+- **Geen batchverwerking.** Bewust één bestand per sessie; scope is documentatie-op-aanvraag.
+- **`importlib`-laden van converters.** Niet een hack om een ontbrekende package-structuur te omzeilen, maar de oplossing voor een specifiek namespace-package conflict: `ROOT_DIR` in `sys.path` zorgt ervoor dat submappen als namespace packages worden opgepikt. `importlib.util.spec_from_file_location()` omzeilt dit correct.
+- **Globale state (`sys.argv`, logging handlers).** Tijdelijke mutatie in `web_ui.py` tijdens conversie. Niet thread-safe, maar irrelevant voor single-threaded gebruik. Staat op de lijst als tech debt.
+
 Ondersteunde bestandstypen: DSExport XML (DataStage), LDM XML (logisch datamodel), DBM XML (fysiek datamodel), MSL (attribuutmapping).
 
 ## Startpunten

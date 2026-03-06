@@ -6,6 +6,18 @@ Ontwikkeld voor het DIM-team bij UWV, gericht op ETL-engineers, informatiearchit
 
 ---
 
+## Ontwerpuitgangspunten
+
+Dit is een intern hulpmiddel met een bewust eenvoudige architectuur, afgestemd op de context:
+
+- **Één gebruiker tegelijk.** De webserver is single-threaded en niet bedoeld als gedeelde dienst.
+- **Afgeschermde bedrijfsomgeving.** UWV-werkstations hebben beperkte internettoegang en streng beleid rondom externe software. Het installeren van Python-packages via pip is geen optie.
+- **Geen externe afhankelijkheden.** Uitsluitend de Python standaardbibliotheek — de tool werkt direct na installatie van Python, zonder verdere setup.
+- **Geen batchverwerking.** De interface verwerkt bewust één bestand per sessie; de scope is documentatie-op-aanvraag, niet geautomatiseerde pipeline-output.
+- **Eenvoud boven robuustheid.** Technische keuzes als `importlib`-laden en tijdelijke state-mutaties zijn bewuste trade-offs: ze vermijden complexiteit die voor deze use case geen meerwaarde heeft.
+
+---
+
 ## Vereisten
 
 - Python 3.10 of hoger
