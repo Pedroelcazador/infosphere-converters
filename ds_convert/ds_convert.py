@@ -96,8 +96,8 @@ def get_xmlprops_tree(rec_elem):
             return ET.fromstring(raw)
         except ET.ParseError:
             return None
-    # Fallback: SubRecord-structuur (CustomStage, oudere format)
-    for sub in rec_elem.findall('SubRecord'):
+    # Fallback: SubRecord-structuur (CustomStage, genest in Collection)
+    for sub in rec_elem.findall('.//SubRecord'):
         n = sub.find("Property[@Name='Name']")
         if n is None or (n.text or '').strip() != 'XMLProperties':
             continue
