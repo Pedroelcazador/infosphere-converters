@@ -305,6 +305,8 @@ def _find_free_port(start: int = PORT, end: int = MAX_PORT) -> int:
 def start(port: int = PORT):
     INPUT_DIR.mkdir(exist_ok=True)
     OUTPUT_DIR.mkdir(exist_ok=True)
+    for f in list(INPUT_DIR.iterdir()):
+        if f.is_file(): f.unlink()
     port = _find_free_port(port)
     server = HTTPServer(("localhost", port), Handler)
     url = f"http://localhost:{port}"
