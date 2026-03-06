@@ -94,6 +94,66 @@ MINIMAL_DSEXPORT_JOBFLOW = """\
 </DSExport>
 """
 
+# Geldige DBM XML voor dbm_convert
+MINIMAL_DBM = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<database name="TestDB">
+  <databaseElement type="Schema" name="DBO">
+    <databaseElement type="Table" name="TEST_TABLE" id="t1">
+      <properties>
+        <property name="Description" value="Testtabel"/>
+      </properties>
+      <databaseElement type="Column" name="ID" id="c1">
+        <properties>
+          <property name="Data Type" value="NUMBER(10)"/>
+          <property name="Is Primary Key" value="true"/>
+          <property name="Is Nullable" value="false"/>
+        </properties>
+      </databaseElement>
+      <databaseElement type="Column" name="NAAM" id="c2">
+        <properties>
+          <property name="Data Type" value="VARCHAR2(100)"/>
+          <property name="Is Nullable" value="true"/>
+        </properties>
+      </databaseElement>
+    </databaseElement>
+  </databaseElement>
+</database>
+"""
+
+# DSExport met sequencer-job voor ds_flow sequencer-pad
+MINIMAL_DSEXPORT_SEQUENCER = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<DSExport ServerName="TestServer" Date="2026-01-01">
+<Job Identifier="par_job1" JobType="1" DateModified="2026-01-01">
+  <Record Identifier="ROOT" Type="DSJobDef">
+    <Property Name="Name">par_job1</Property>
+  </Record>
+</Job>
+<Job Identifier="seq_main" JobType="2" DateModified="2026-01-01">
+  <Record Identifier="ROOT" Type="DSJobDef">
+    <Property Name="Name">seq_main</Property>
+  </Record>
+  <Record Identifier="ACT1" Type="JSJobActivity">
+    <Property Name="Name">RunJob1</Property>
+    <Property Name="Jobname">par_job1</Property>
+    <Property Name="OutputPins">ACT1P1</Property>
+    <Property Name="InputPins"></Property>
+  </Record>
+  <Record Identifier="ACT1P1" Type="JSActivityOutput">
+    <Property Name="Partner">ACT2</Property>
+    <Property Name="ConditionType">2</Property>
+    <Property Name="Name">OK</Property>
+  </Record>
+  <Record Identifier="ACT2" Type="JSTerminatorActivity">
+    <Property Name="Name">End</Property>
+    <Property Name="OutputPins"></Property>
+    <Property Name="InputPins">ACT2P1</Property>
+  </Record>
+</Job>
+</DSExport>
+"""
+
 # Geldige LDM XML voor ldm_convert
 MINIMAL_LDM = """\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -257,6 +317,30 @@ class TestDsConvert(unittest.TestCase):
         except SystemExit:
             self.fail("validate_dse() riep sys.exit() aan voor een geldige DSExport")
 
+    # --- get_xmlprops_tree ---
+
+    def test_get_xmlprops_tree_nested_in_collection(self):
+        """Regressietest: XMLProperties genest in Collection/SubRecord wordt gevonden."""
+        xml_props = "&lt;Properties version='1.1'&gt;&lt;Common/&gt;&lt;/Properties&gt;"
+        elem = ET.fromstring(f"""
+            <Record Type="CustomStage">
+              <Property Name="StageType">OracleConnectorPX</Property>
+              <Collection Name="Properties" Type="CustomProperty">
+                <SubRecord>
+                  <Property Name="Name">XMLProperties</Property>
+                  <Property Name="Value">{xml_props}</Property>
+                </SubRecord>
+              </Collection>
+            </Record>
+        """)
+        result = self.mod.get_xmlprops_tree(elem)
+        self.assertIsNotNone(result, "get_xmlprops_tree() moet de geneste XMLProperties vinden")
+
+    def test_get_xmlprops_tree_returns_none_when_absent(self):
+        """get_xmlprops_tree() geeft None terug als XMLProperties ontbreekt."""
+        elem = ET.fromstring('<Record Type="CustomStage"><Property Name="Name">X</Property></Record>')
+        self.assertIsNone(self.mod.get_xmlprops_tree(elem))
+
     # --- CDATA & entities smoke tests ---
 
     def test_smoke_main_cdata(self):
@@ -327,6 +411,31 @@ class TestDsFlow(unittest.TestCase):
         # Geen item mag de parallel job-id als root-diagram-id hebben
         flow_ids = [item['id'] for item in result]
         self.assertNotIn('TestParJob', flow_ids)
+
+    def test_smoke_main_sequencer(self):
+        """main() verwerkt een sequencer-export en schrijft een *_Flow.html."""
+        (self.inp / 'test_export.xml').unlink()
+        (self.inp / 'seq_export.xml').write_text(MINIMAL_DSEXPORT_SEQUENCER, encoding='utf-8')
+        self.mod.ds.INPUT_DIR = self.inp
+        self.mod.main()
+        html_files = list(self.out.glob('*_Flow.html'))
+        self.assertEqual(len(html_files), 1,
+                         f"Verwacht één *_Flow.html, gevonden: {[f.name for f in html_files]}")
+        self.assertGreater(html_files[0].stat().st_size, 0)
+
+    def test_parse_all_sequencer_has_nodes(self):
+        """parse_all() detecteert sequencer-job en retourneert nodes."""
+        result = self.mod.parse_all(MINIMAL_DSEXPORT_SEQUENCER)
+        seq_ids = [item['id'] for item in result]
+        self.assertIn('seq_main', seq_ids)
+        seq = next(item for item in result if item['id'] == 'seq_main')
+        self.assertGreater(len(seq['nodes']), 0)
+
+    def test_parse_all_sequencer_has_links(self):
+        """parse_all() detecteert de OK-link in de sequencer."""
+        result = self.mod.parse_all(MINIMAL_DSEXPORT_SEQUENCER)
+        seq = next(item for item in result if item['id'] == 'seq_main')
+        self.assertGreater(len(seq['links']), 0)
 
 
 # ---------------------------------------------------------------------------
@@ -599,6 +708,93 @@ class TestMslLineage(unittest.TestCase):
         result  = self.mod.build_lineage_data(data)
         target_ids = [t['id'] for t in result['targets']]
         self.assertIn('TARGET_TABLE', target_ids)
+
+
+# ---------------------------------------------------------------------------
+# dbm_convert
+# ---------------------------------------------------------------------------
+
+class TestDbmConvert(unittest.TestCase):
+
+    def setUp(self):
+        logging.disable(logging.CRITICAL)
+        self._td = tempfile.TemporaryDirectory()
+        td       = Path(self._td.name)
+        self.inp = td / 'input'
+        self.out = td / 'output'
+        self.inp.mkdir()
+        self.out.mkdir()
+        (self.inp / 'test_model.xml').write_text(MINIMAL_DBM, encoding='utf-8')
+        self.mod = _load_module(ROOT / 'dbm_convert' / 'dbm_convert.py', 'dbm_convert')
+        self.mod.INPUT_DIR  = self.inp
+        self.mod.OUTPUT_DIR = self.out
+
+    def tearDown(self):
+        logging.disable(logging.NOTSET)
+        self._td.cleanup()
+
+    def test_smoke_main(self):
+        """main() loopt foutloos en schrijft _Datamodel.html en _ERD.html."""
+        self.mod.main()
+        html_files = list(self.out.glob('*.html'))
+        names = [f.name for f in html_files]
+        self.assertTrue(any('Datamodel' in n for n in names),
+                        f"Geen *_Datamodel.html gevonden in: {names}")
+        self.assertTrue(any('ERD' in n for n in names),
+                        f"Geen *_ERD.html gevonden in: {names}")
+
+    def test_validate_dbm_rejects_wrong_root(self):
+        root = ET.fromstring('<DSExport/>')
+        with self.assertRaises(SystemExit):
+            self.mod.validate_dbm(root, Path('test.xml'))
+
+    def test_validate_dbm_rejects_no_schemas(self):
+        root = ET.fromstring('<database name="X"/>')
+        with self.assertRaises(SystemExit):
+            self.mod.validate_dbm(root, Path('test.xml'))
+
+    def test_validate_dbm_accepts_valid(self):
+        root = ET.fromstring(MINIMAL_DBM)
+        try:
+            self.mod.validate_dbm(root, Path('test.xml'))
+        except SystemExit:
+            self.fail("validate_dbm() riep sys.exit() aan voor een geldige DBM")
+
+    def test_parse_model_structure(self):
+        root   = ET.fromstring(MINIMAL_DBM)
+        model  = self.mod.parse_model(root)
+        self.assertIn('tables',     model)
+        self.assertIn('stats',      model)
+        self.assertIn('model_name', model)
+
+    def test_parse_model_one_table(self):
+        root  = ET.fromstring(MINIMAL_DBM)
+        model = self.mod.parse_model(root)
+        self.assertEqual(len(model['tables']), 1)
+        self.assertEqual(model['tables'][0]['name'], 'TEST_TABLE')
+
+    def test_parse_model_columns(self):
+        root  = ET.fromstring(MINIMAL_DBM)
+        model = self.mod.parse_model(root)
+        cols  = model['tables'][0]['columns']
+        self.assertEqual(len(cols), 2)
+
+    def test_parse_model_pk_detected(self):
+        root  = ET.fromstring(MINIMAL_DBM)
+        model = self.mod.parse_model(root)
+        pk_cols = [c for c in model['tables'][0]['columns'] if c['pk']]
+        self.assertEqual(len(pk_cols), 1)
+        self.assertEqual(pk_cols[0]['name'], 'ID')
+
+    def test_parse_model_nullable(self):
+        root  = ET.fromstring(MINIMAL_DBM)
+        model = self.mod.parse_model(root)
+        cols  = {c['name']: c for c in model['tables'][0]['columns']}
+        self.assertFalse(cols['ID']['nullable'])
+        self.assertTrue(cols['NAAM']['nullable'])
+
+    def test_make_anchor(self):
+        self.assertEqual(self.mod.make_anchor('Test Tabel'), 'test-tabel')
 
 
 if __name__ == '__main__':
