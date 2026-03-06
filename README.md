@@ -131,6 +131,7 @@ Documenteert alle entiteiten en attributen uit een logisch datamodel:
 - Attribuuttabel met datatype, PK, verplicht, surrogate key en beschrijving
 - DIM/bitemporale metadata-velden ingeklapt in een uitklapbare sectie
 - Interactief ERD met keuze uit drie layouts: **Ster** (feitentabellen centraal), **Hiërarchisch** (FK-diepte) en **Grid** (alfabetisch raster)
+- **Sterfilter**: bij stermodellen verschijnt een dropdown waarmee één feitentabel geselecteerd kan worden — alleen die ster en zijn dimensies worden dan getoond
 - Foreign key relaties met multipliciteit en crow's foot-notatie
 
 ---

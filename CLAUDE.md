@@ -88,6 +88,8 @@ Beide converters bevatten een inline ERD-template als Python raw string (`ERD_TE
 
 Het ERD bevat een **Layout-keuze** in de toolbar (Ster / Hiërarchisch / Grid). Python berekent de eerste twee en stuurt ze als JSON mee (`positions_star_json`, `positions_hier_json`). Grid wordt ter plekke in JS berekend. Wisselen verloopt met een CSS-transitie; posities worden per layout opgeslagen in localStorage (`BASE_KEY + '_' + layout`).
 
+Bij stermodellen verschijnt ook een **Ster-dropdown**. JS detecteert feitentabellen (naam eindigt op `_FT` of `fkOutCount >= STAR_THRESHOLD=4`) en bouwt een `starMap` (ft_id → Set van parent-ids). Bij selectie worden niet-gerelateerde entiteiten verborgen (`display:none`) en hun SVG-lijnen weggelaten. Layout-wisseling wist het filter.
+
 ## Open verbeterpunten
 
 Zie `to_do.md` voor de volledige lijst. Belangrijkste open punten:
