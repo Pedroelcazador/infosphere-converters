@@ -139,7 +139,7 @@ body{
   border:1px dashed #d0d7de;
   border-radius:6px;
   padding:8px 10px 8px 22px;
-  font-size:11px;color:var(--muted);
+  font-size:9px;font-family:Courier,monospace;color:var(--muted);
   line-height:1.5;
   pointer-events:all;
   max-width:280px;
@@ -213,6 +213,15 @@ body{
 }
 .sql-block::-webkit-scrollbar{width:4px;height:4px;}
 .sql-block::-webkit-scrollbar-thumb{background:#d0d7de;}
+.sql-wrap{position:relative;}
+.sql-copy-btn{
+  position:absolute;top:6px;right:6px;
+  background:#fff;border:1px solid var(--border);border-radius:4px;
+  padding:1px 7px;font-size:10px;cursor:pointer;color:var(--muted);
+  opacity:0;transition:opacity .15s;line-height:1.6;
+}
+.sql-wrap:hover .sql-copy-btn{opacity:1;}
+.sql-copy-btn.copied{color:#1a7f37;border-color:#1a7f37;}
 
 /* SQL syntax highlighting */
 .kw{color:#0550ae;font-weight:600;}
@@ -670,6 +679,12 @@ function highlightSQL(sql){
   return escaped.replace(keywords, m => `<span class="kw">${m.toUpperCase()}</span>`);
 }
 
+function sqlBlock(htmlContent, plainText, extraStyle=''){
+  const plain = plainText.replace(/"/g,'&quot;');
+  const style = extraStyle ? ` style="${extraStyle}"` : '';
+  return `<div class="sql-wrap"><button class="sql-copy-btn" data-plain="${plain}">Kopieer</button><div class="sql-block"${style}>${htmlContent}</div></div>`;
+}
+
 // ── Stage selecteren & detail tonen
 function selectStage(id){
   if(selectedId){
@@ -745,7 +760,7 @@ function showDetail(s){
   if(s.sql){
     html += `<div class="dp-section">
       <div class="dp-section-title">SQL</div>
-      <div class="sql-block">${highlightSQL(s.sql)}</div>
+      ${sqlBlock(highlightSQL(s.sql), s.sql)}
     </div>`;
   }
 
@@ -753,7 +768,7 @@ function showDetail(s){
   if(s.where_clause){
     html += `<div class="dp-section">
       <div class="dp-section-title">Where clause</div>
-      <div class="sql-block">${highlightSQL(s.where_clause)}</div>
+      ${sqlBlock(highlightSQL(s.where_clause), s.where_clause)}
     </div>`;
   }
 
@@ -762,9 +777,9 @@ function showDetail(s){
     html += `<div class="dp-section">
       <div class="dp-section-title">Before / After SQL</div>`;
     if(s.before_sql) html += `<div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px">Before</div>
-      <div class="sql-block" style="margin-bottom:8px">${highlightSQL(s.before_sql)}</div>`;
+      ${sqlBlock(highlightSQL(s.before_sql), s.before_sql, 'margin-bottom:8px')}`;
     if(s.after_sql)  html += `<div style="font-size:9px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px">After</div>
-      <div class="sql-block">${highlightSQL(s.after_sql)}</div>`;
+      ${sqlBlock(highlightSQL(s.after_sql), s.after_sql)}`;
     html += `</div>`;
   }
 
@@ -844,7 +859,7 @@ function showDetail(s){
     if(s.constraint){
       html += `<div class="dp-section">
         <div class="dp-section-title">⚠ Filter (constraint)</div>
-        <div class="sql-block">${esc(s.constraint)}</div>
+        ${sqlBlock(esc(s.constraint), s.constraint)}
       </div>`;
     }
 
@@ -1091,6 +1106,17 @@ renderLinks();
 renderStages();
 buildInfoPanel();
 fit();
+
+// SQL kopieer-knop
+document.getElementById('detail-panel').addEventListener('click', e => {
+  const btn = e.target.closest('.sql-copy-btn');
+  if(!btn) return;
+  navigator.clipboard.writeText(btn.dataset.plain).then(() => {
+    btn.textContent = '✓ Gekopieerd';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Kopieer'; btn.classList.remove('copied'); }, 1500);
+  });
+});
 
 // Zoek event listeners
 document.getElementById('search-input').addEventListener('input', e => applySearch(e.target.value));

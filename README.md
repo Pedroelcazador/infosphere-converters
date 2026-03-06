@@ -119,6 +119,8 @@ Interactief dataflow-diagram van de interne structuur van een parallel job:
 
 - Stages gepositioneerd op basis van de originele XY-coördinaten uit het XML
 - Klik op een stage voor SQL, tabelinformatie en kolomdefinities
+- Kopieerknop op elk SQL-blok (verschijnt bij hover)
+- Annotaties weergegeven in monospace lettertype
 
 ---
 
