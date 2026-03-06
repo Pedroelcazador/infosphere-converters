@@ -82,9 +82,14 @@ De template gebruikt `.replace()` (niet `.format()`): `{title}`, `{sources_json}
 **ERD-templates in ldm_convert en dbm_convert**
 Beide converters bevatten een inline ERD-template als Python raw string (`ERD_TEMPLATE = r"""..."""`). Alle `{` en `}` in de HTML/JS zijn ge-escaped als `{{` en `}}`, zodat `.format()` ze niet verstoort.
 
+## ERD-layoutsysteem (ldm_convert)
+
+`compute_layout()` detecteert automatisch stermodellen (naam eindigt op `_FT` of ≥4 FK-referenties) en kiest de bijpassende layout. `_hierarchical_layout()` is de fallback voor niet-stermodellen.
+
+Het ERD bevat een **Layout-keuze** in de toolbar (Ster / Hiërarchisch / Grid). Python berekent de eerste twee en stuurt ze als JSON mee (`positions_star_json`, `positions_hier_json`). Grid wordt ter plekke in JS berekend. Wisselen verloopt met een CSS-transitie; posities worden per layout opgeslagen in localStorage (`BASE_KEY + '_' + layout`).
+
 ## Open verbeterpunten
 
 Zie `to_do.md` voor de volledige lijst. Belangrijkste open punten:
 - Globale state-mutatie `logging.root.handlers` in `web_ui.py` (niet thread-safe)
-- Stage-rendering duplicatie in `ds_convert.py`
 - DataStage Linter (`ds_linter`) nog te implementeren
