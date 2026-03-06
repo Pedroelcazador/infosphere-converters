@@ -72,7 +72,7 @@ Ondersteunde bestandstypen:
 ### Beperkingen
 
 - Upload slechts **één bestand tegelijk**. Bij meerdere bestanden geeft de interface een foutmelding.
-- Staat er nog een bestand in de inputmap van een vorige sessie? Gebruik dan eerst **Nieuwe sessie**.
+- Bij elke nieuwe serverstart wordt de inputmap automatisch leeggemaakt.
 
 ---
 
@@ -130,8 +130,8 @@ Documenteert alle entiteiten en attributen uit een logisch datamodel:
 
 - Attribuuttabel met datatype, PK, verplicht, surrogate key en beschrijving
 - DIM/bitemporale metadata-velden ingeklapt in een uitklapbare sectie
-- Interactief ERD met vier weergavemodi (None / Keys / Functional / All)
-- Foreign key relaties met multipliciteit
+- Interactief ERD met keuze uit drie layouts: **Ster** (feitentabellen centraal), **Hiërarchisch** (FK-diepte) en **Grid** (alfabetisch raster)
+- Foreign key relaties met multipliciteit en crow's foot-notatie
 
 ---
 
