@@ -458,8 +458,8 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
   #toolbar h1 {{ font-size:13px; color:#cce0f5; flex:1; font-weight:400; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
   #toolbar h1 strong {{ color:#fff; font-weight:700; }}
   /* ── Attribuutmodus-knoppen ── */
-  #attr-mode-group {{ display:flex; gap:4px; align-items:center; border-left:1px solid rgba(255,255,255,0.2); padding-left:10px; flex-shrink:0; }}
-  #attr-mode-group span {{ font-size:10px; color:#a8cce8; margin-right:2px; white-space:nowrap; }}
+  #attr-mode-group, #layout-group {{ display:flex; gap:4px; align-items:center; border-left:1px solid rgba(255,255,255,0.2); padding-left:10px; flex-shrink:0; }}
+  #attr-mode-group span, #layout-group span {{ font-size:10px; color:#a8cce8; margin-right:2px; white-space:nowrap; }}
   .mode-btn {{
     padding:4px 9px; border-radius:4px; border:1.5px solid rgba(255,255,255,0.3);
     background:rgba(255,255,255,0.08); color:rgba(255,255,255,0.7); cursor:pointer;
@@ -522,6 +522,11 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
     cursor:default; user-select:none;
     box-shadow:0 2px 8px rgba(0,91,154,0.13);
     transition:box-shadow 0.15s, opacity 0.2s;
+  }}
+  .entity.layout-anim {{
+    transition:left 0.45s cubic-bezier(0.25,0.46,0.45,0.94),
+               top  0.45s cubic-bezier(0.25,0.46,0.45,0.94),
+               box-shadow 0.15s, opacity 0.2s;
   }}
   .entity:hover {{ box-shadow:0 4px 18px rgba(0,91,154,0.28); }}
   .entity.dragging {{ box-shadow:0 8px 28px rgba(0,91,154,0.36); z-index:999; }}
@@ -606,6 +611,12 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
     <button class="mode-btn {mode_keys_active}"  onclick="setMode('keys')"  title="Alleen PK- en FK-attributen">Keys</button>
     <button class="mode-btn {mode_all_active}"   onclick="setMode('all')"   title="Alle attributen inclusief DIM-meta">All</button>
   </div>
+  <div id="layout-group">
+    <span>Layout:</span>
+    <button class="mode-btn active" data-layout="star" onclick="setLayout('star')" title="Stermodel: feitentabellen centraal, dimensies eromheen">Ster</button>
+    <button class="mode-btn"        data-layout="hier" onclick="setLayout('hier')" title="Hiërarchisch: niveaus op basis van FK-diepte">Hiërarchisch</button>
+    <button class="mode-btn"        data-layout="grid" onclick="setLayout('grid')" title="Grid: entiteiten gesorteerd in rijen en kolommen">Grid</button>
+  </div>
   <div id="legend">
     <div class="leg"><div class="leg-solid"></div><span>Non-identifying</span></div>
     <div class="leg"><div class="leg-dashed"></div><span>Identifying</span></div>
@@ -630,8 +641,22 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
 let   ATTR_MODE  = '{init_mode}';   // 'none' | 'keys' | 'all'
 const ENTITIES   = {entities_json};
 const RELS       = {rels_json};
-const INIT_POS   = {positions_json};
-const STORAGE_KEY = 'erd_pos_{model_key}';
+const LAYOUTS    = {{
+  star: {positions_star_json},
+  hier: {positions_hier_json},
+}};
+// Grid-layout: op naam gesorteerde entiteiten in een raster
+LAYOUTS.grid = (function() {{
+  const sorted = [...ENTITIES].sort((a,b) => a.name.localeCompare(b.name));
+  const cols   = Math.ceil(Math.sqrt(sorted.length * 1.4));
+  const r = {{}};
+  sorted.forEach((e, i) => {{
+    r[e.id] = {{ x: (i % cols) * 310 + 30, y: Math.floor(i / cols) * 230 + 80 }};
+  }});
+  return r;
+}})();
+const BASE_KEY    = 'erd_{model_key}';
+let currentLayout = 'star';
 
 // ── State ──────────────────────────────────────────────────────────────────
 let pos      = {{}};
@@ -654,21 +679,20 @@ const adjMap = {{}};  // id → Set van verbonden id's
 ENTITIES.forEach(e => {{ adjMap[e.id] = new Set(); }});
 RELS.forEach(r => {{ adjMap[r.p]?.add(r.c); adjMap[r.c]?.add(r.p); }});
 
-// ── Posities laden (localStorage → INIT_POS fallback) ─────────────────────
-function loadPos() {{
+// ── Posities laden (localStorage → LAYOUTS fallback) ──────────────────────
+function loadPos(layout) {{
   try {{
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(BASE_KEY + '_' + layout);
     if (saved) {{
       const parsed = JSON.parse(saved);
-      // Valideer: alle entiteiten moeten een positie hebben
       if (ENTITIES.every(e => parsed[e.id])) return parsed;
     }}
   }} catch(e) {{}}
-  return JSON.parse(JSON.stringify(INIT_POS));
+  return JSON.parse(JSON.stringify(LAYOUTS[layout]));
 }}
 
 function savePos() {{
-  try {{ localStorage.setItem(STORAGE_KEY, JSON.stringify(pos)); }} catch(e) {{}}
+  try {{ localStorage.setItem(BASE_KEY + '_' + currentLayout, JSON.stringify(pos)); }} catch(e) {{}}
 }}
 
 // ── Entiteit aanmaken ──────────────────────────────────────────────────────
@@ -1000,7 +1024,7 @@ function applyT() {{
 
 // ── Knoppen ────────────────────────────────────────────────────────────────
 function resetLayout() {{
-  pos = JSON.parse(JSON.stringify(INIT_POS));
+  pos = JSON.parse(JSON.stringify(LAYOUTS[currentLayout]));
   ENTITIES.forEach(e => {{
     const el = document.getElementById('ent_' + e.id);
     if (el) {{ el.style.left=pos[e.id].x+'px'; el.style.top=pos[e.id].y+'px'; }}
@@ -1008,6 +1032,28 @@ function resetLayout() {{
   off={{x:20,y:10}}; sc=0.75; applyT();
   setTimeout(() => {{ draw(); drawMinimap(); }}, 60);
   savePos();
+}}
+
+function setLayout(name) {{
+  if (!LAYOUTS[name] || name === currentLayout) return;
+  currentLayout = name;
+  const newPos  = loadPos(name);
+  // Animeer de overgang
+  ENTITIES.forEach(e => document.getElementById('ent_' + e.id)?.classList.add('layout-anim'));
+  pos = newPos;
+  ENTITIES.forEach(e => {{
+    const el = document.getElementById('ent_' + e.id);
+    if (el) {{ el.style.left = pos[e.id].x + 'px'; el.style.top = pos[e.id].y + 'px'; }}
+  }});
+  setTimeout(() => {{
+    ENTITIES.forEach(e => document.getElementById('ent_' + e.id)?.classList.remove('layout-anim'));
+    draw(); drawMinimap();
+  }}, 480);
+  // Actieve knop bijwerken
+  document.querySelectorAll('#layout-group .mode-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.layout === name)
+  );
+  setTimeout(fitView, 50);
 }}
 
 function toggleAllExpand() {{
@@ -1170,7 +1216,7 @@ document.addEventListener('click', ev => {{
 }});
 
 // ── Init ───────────────────────────────────────────────────────────────────
-pos = loadPos();
+pos = loadPos(currentLayout);
 ENTITIES.forEach(makeEnt);
 off={{x:20,y:10}}; applyT();
 setTimeout(() => {{ draw(); drawMinimap(); }}, 120);
@@ -1185,7 +1231,11 @@ def render_erd(model: dict, all_attrs: bool) -> str:
 
     entities   = model['entities']
     model_name = model['model_name']
-    positions  = compute_layout(entities)
+    positions_star = compute_layout(entities)
+    positions_hier = _hierarchical_layout(entities, {
+        n: {fk['parent_table'] for fk in e['fks'] if fk['parent_table'] != n}
+        for e in entities for n in [e['name']]
+    })
 
     # Entiteiten bouwen voor JS
     ent_list = []
@@ -1231,11 +1281,15 @@ def render_erd(model: dict, all_attrs: bool) -> str:
                         'lc': e['name'],             # labelnaam child
                     })
 
-    pos_by_id = {
-        name_to_id[name]: xy
-        for name, xy in positions.items()
-        if name in name_to_id
-    }
+    def to_id_pos(pos_by_name):
+        return {
+            name_to_id[name]: xy
+            for name, xy in pos_by_name.items()
+            if name in name_to_id
+        }
+
+    pos_star = to_id_pos(positions_star)
+    pos_hier = to_id_pos(positions_hier)
 
     # Unieke sleutel voor localStorage (op basis van modelnaam)
     import hashlib
@@ -1244,15 +1298,16 @@ def render_erd(model: dict, all_attrs: bool) -> str:
     init_mode = 'all' if all_attrs else 'keys'
 
     html = ERD_TEMPLATE.format(
-        model_name       = model_name,
-        model_key        = model_key,
-        init_mode        = init_mode,
-        mode_none_active = 'active' if init_mode == 'none' else '',
-        mode_keys_active = 'active' if init_mode == 'keys' else '',
-        mode_all_active  = 'active' if init_mode == 'all'  else '',
-        entities_json   = json.dumps(ent_list,  ensure_ascii=False),
-        rels_json       = json.dumps(rels_list, ensure_ascii=False),
-        positions_json  = json.dumps(pos_by_id, ensure_ascii=False),
+        model_name          = model_name,
+        model_key           = model_key,
+        init_mode           = init_mode,
+        mode_none_active    = 'active' if init_mode == 'none' else '',
+        mode_keys_active    = 'active' if init_mode == 'keys' else '',
+        mode_all_active     = 'active' if init_mode == 'all'  else '',
+        entities_json       = json.dumps(ent_list,  ensure_ascii=False),
+        rels_json           = json.dumps(rels_list, ensure_ascii=False),
+        positions_star_json = json.dumps(pos_star,  ensure_ascii=False),
+        positions_hier_json = json.dumps(pos_hier,  ensure_ascii=False),
     )
     return html
 
