@@ -103,6 +103,7 @@ Interactief flowdiagram per sequencer-job:
 
 - OK (groen) / NOK (rood) / onvoorwaardelijk (gestippeld) paden
 - Klik op een job-activiteit voor SQL en tabeldetails van de bijbehorende parallel job
+- Klik op **⬡ Bekijk job flow** om de volledige interne dataflow van die job te openen — identiek aan de standalone `ds_job_flow` output, inclusief SQL highlighting, Oracle details en kolomdefinities
 - Topologische ranking van nodes
 
 ---

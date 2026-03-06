@@ -21,6 +21,12 @@ ds = importlib.util.module_from_spec(_ds_spec)
 sys.modules['ds_convert'] = ds
 _ds_spec.loader.exec_module(ds)
 
+_dsj_path = Path(__file__).resolve().parent.parent / 'ds_job_flow' / 'ds_job_flow.py'
+_dsj_spec = importlib.util.spec_from_file_location('ds_job_flow', _dsj_path)
+dsj = importlib.util.module_from_spec(_dsj_spec)
+sys.modules['ds_job_flow'] = dsj
+_dsj_spec.loader.exec_module(dsj)
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR   = SCRIPT_DIR.parent
 OUTPUT_DIR = ROOT_DIR / 'output'
@@ -95,73 +101,27 @@ def extract_par_details(job_elem):
     return stages
 
 
-# ── Job flow data extraheren ──────────────────────────────────────────────────
+# ── Job flow HTML genereren (voor iframe in modal) ────────────────────────────
 
-def extract_job_flow(job_elem):
-    """Extraheer stage-diagram data (stages + links) uit het ContainerView record."""
-    cv = job_elem.find("Record[@Identifier='V0']")
-    if cv is None:
+def generate_job_flow_html(job_elem, jobname, export_date, xml_stem):
+    """Genereer volledige ds_job_flow HTML voor één parallel job en sla op in output/.
+    Geeft de bestandsnaam terug, of None bij mislukking."""
+    try:
+        xml_str  = ET.tostring(job_elem, encoding='unicode')
+        job_data = dsj.parse_job(xml_str)
+        job_html = dsj.build_html(job_data, export_date, xml_stem)
+        safe     = re.sub(r'[^\w\-]', '_', jobname)
+        fname    = f'{xml_stem}_{safe}_JobFlow.html'
+        (OUTPUT_DIR / fname).write_text(job_html, encoding='utf-8')
+        return fname
+    except (SystemExit, Exception) as exc:
+        log.warning('Job flow genereren mislukt voor %s: %s', jobname, exc)
         return None
-
-    def splitp(name):
-        return [x.strip() for x in (ds.prop(cv, name) or '').split('|')]
-
-    stage_ids  = splitp('StageList')
-    stg_names  = splitp('StageNames')
-    stg_types  = splitp('StageTypeIDs')
-    xs_raw     = splitp('StageXPos')
-    ys_raw     = splitp('StageYPos')
-    xsizes_raw = splitp('StageXSize')
-    ysizes_raw = splitp('StageYSize')
-    link_names = splitp('LinkNames')
-    target_ids = splitp('TargetStageIDs')
-    src_pins   = splitp('LinkSourcePinIDs')
-
-    def toint(lst, i, default=0):
-        try:
-            v = lst[i] if i < len(lst) else ''
-            return int(v) if v.lstrip('-').isdigit() else default
-        except (ValueError, IndexError):
-            return default
-
-    stages    = []
-    stage_set = set()
-    for i, sid in enumerate(stage_ids):
-        if not sid:
-            continue
-        name = stg_names[i] if i < len(stg_names) else sid
-        if not name or name.startswith('\\'):
-            continue
-        stype = stg_types[i] if i < len(stg_types) else ''
-        stage_set.add(sid)
-        stages.append({
-            'id':    sid,
-            'name':  name,
-            'type':  stype,
-            'x':     toint(xs_raw, i),
-            'y':     toint(ys_raw, i),
-            'xsize': max(48, toint(xsizes_raw, i, 48)),
-            'ysize': max(24, toint(ysizes_raw, i, 24)),
-        })
-
-    links = []
-    for i, lname in enumerate(link_names):
-        if not lname or lname.startswith('\\'):
-            continue
-        tgt     = target_ids[i] if i < len(target_ids) else ''
-        src_pin = src_pins[i]   if i < len(src_pins)   else ''
-        src     = re.sub(r'P\d+$', '', src_pin)
-        if src in stage_set and tgt in stage_set:
-            links.append({'src': src, 'tgt': tgt, 'name': lname})
-
-    if not stages:
-        return None
-    return {'stages': stages, 'links': links}
 
 
 # ── Sequencer parsen ──────────────────────────────────────────────────────────
 
-def parse_sequencer(job_id, job_elem, par_elems):
+def parse_sequencer(job_id, job_elem, par_elems, export_date, xml_stem):
     records = {
         rec.get('Identifier', ''): (rec.get('Type', ''), rec)
         for rec in job_elem.findall('Record')
@@ -217,17 +177,17 @@ def parse_sequencer(job_id, job_elem, par_elems):
             st   = ds.prop(rec, 'SequencerType')
             gate = 'AND' if st == '1' else 'OR' if st == '0' else '?'
 
-        par_stages = []
-        job_flow   = None
+        par_stages     = []
+        job_flow_file  = None
         if kind == 'job' and jobname and jobname in par_elems:
-            par_stages = extract_par_details(par_elems[jobname])
-            job_flow   = extract_job_flow(par_elems[jobname])
+            par_stages    = extract_par_details(par_elems[jobname])
+            job_flow_file = generate_job_flow_html(par_elems[jobname], jobname, export_date, xml_stem)
 
         nodes[rid] = {
             'id': rid, 'name': name, 'kind': kind,
             'rtype': rtype, 'jobname': jobname,
             'gate': gate, 'par_stages': par_stages,
-            'job_flow': job_flow,
+            'job_flow_file': job_flow_file,
         }
 
     # Topologische rank via Kahn (cycles landen aan het eind)
@@ -267,7 +227,7 @@ def parse_sequencer(job_id, job_elem, par_elems):
 
 # ── Alle jobs parsen ──────────────────────────────────────────────────────────
 
-def parse_all(content):
+def parse_all(content, export_date='?', xml_stem='export'):
     root = ET.fromstring(content)
     job_elems = root.findall('Job')
 
@@ -287,16 +247,16 @@ def parse_all(content):
                    for r in rtypes):
             continue
         log.info('  Sequencer: %s', jid)
-        sequencers.append(parse_sequencer(jid, job_elem, par_elems))
+        sequencers.append(parse_sequencer(jid, job_elem, par_elems, export_date, xml_stem))
 
     # Fallback: geen sequencers → toon parallel jobs als simpele nodes
     if not sequencers:
         log.info('  Geen sequencers gevonden — parallel jobs als overzicht weergeven')
         nodes = []
         for jid, job_elem in par_elems.items():
-            par_stages = extract_par_details(job_elem)
-            job_flow   = extract_job_flow(job_elem)
-            root_rec   = job_elem.find("Record[@Identifier='ROOT']")
+            par_stages    = extract_par_details(job_elem)
+            job_flow_file = generate_job_flow_html(job_elem, jid, export_date, xml_stem)
+            root_rec      = job_elem.find("Record[@Identifier='ROOT']")
             desc = ''
             if root_rec is not None:
                 raw = ds.prop(root_rec, 'Description') or ''
@@ -306,7 +266,7 @@ def parse_all(content):
                 'id': jid, 'name': jid, 'kind': 'job',
                 'rtype': 'JSJobActivity', 'jobname': jid,
                 'gate': '', 'par_stages': par_stages,
-                'job_flow': job_flow,
+                'job_flow_file': job_flow_file,
                 'description': desc,
             })
         # Geen links bij enkelvoudige jobs
@@ -528,35 +488,7 @@ body{background:var(--bg);color:var(--text);
   background:var(--surf);color:var(--text);font-size:11.5px;cursor:pointer;flex-shrink:0;
 }
 .jf-btn:hover{background:var(--surf2);}
-#jf-wrap{
-  flex:1;overflow:hidden;position:relative;background:var(--bg);
-  background-image:radial-gradient(circle,#c5d5e5 1px,transparent 1px);
-  background-size:20px 20px;
-}
-#jf-canvas{position:absolute;top:0;left:0;transform-origin:0 0;}
-#jf-canvas svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible;}
-.jf-stage{
-  position:absolute;width:160px;background:var(--surf);border-radius:7px;
-  border:2px solid var(--border);padding:7px 10px;
-  box-shadow:0 1px 4px rgba(0,0,0,.1);cursor:default;
-  transition:border-color .12s,box-shadow .12s;
-}
-.jf-stage:hover{
-  border-color:var(--accent);
-  box-shadow:0 0 0 2px rgba(9,105,218,.18),0 4px 12px rgba(0,0,0,.13);
-}
-.jf-type-badge{
-  font-size:8.5px;font-weight:700;color:#fff;padding:1px 6px;
-  border-radius:10px;display:inline-block;margin-bottom:4px;
-}
-.jf-stage-name{font-size:10px;font-weight:700;color:var(--text);word-break:break-word;line-height:1.35;}
-#jf-infobar{
-  position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
-  background:rgba(255,255,255,.9);backdrop-filter:blur(6px);
-  border:1px solid var(--border);border-radius:20px;
-  padding:4px 14px;font-size:10px;color:var(--muted);
-  pointer-events:none;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.1);
-}
+#jf-iframe{flex:1;width:100%;border:none;}
 """
 
     js = r"""
@@ -832,11 +764,10 @@ function showDetail(node,seq){
         <em>(externe job)</em></div></div>`;
   }
 
-  if(node.kind==='job'&&node.job_flow&&node.job_flow.stages.length){
+  if(node.kind==='job'&&node.job_flow_file){
     html+=`<hr class="ddiv">
       <button class="jf-open-btn" onclick="openJobFlow()">
         <span>⬡ Bekijk job flow</span>
-        <span class="jf-count">${node.job_flow.stages.length} stages · ${node.job_flow.links.length} links</span>
       </button>`;
   }
 
@@ -888,142 +819,19 @@ function fit(){
 function resetZoom(){sc=1;tx={x:80,y:80};applyT();}
 
 // ── Job Flow Modal ────────────────────────────────────────────────────────────
-const STYPE_COLOR={
-  'OracleConnectorPX':'#0969da','TransformerStage':'#6e40c9',
-  'CTransformerStage':'#6e40c9','PxAggregator':'#0550ae',
-  'PxJoin':'#953800','PxFilter':'#1a7f37','PxSort':'#6e7781',
-  'PxLookup':'#8250df','PxSequentialFile':'#cf222e',
-  'PxFunnel':'#0969da','PxMerge':'#58a6ff','PxPeek':'#6e7781',
-};
-const STYPE_LABEL={
-  'OracleConnectorPX':'Oracle','TransformerStage':'Transformer',
-  'CTransformerStage':'Transformer','PxAggregator':'Aggregator',
-  'PxJoin':'Join','PxFilter':'Filter','PxSort':'Sort',
-  'PxLookup':'Lookup','PxSequentialFile':'SeqFile',
-  'PxFunnel':'Funnel','PxMerge':'Merge','PxPeek':'Peek',
-};
-function stCol(t){return STYPE_COLOR[t]||'#656d76';}
-function stLbl(t){return STYPE_LABEL[t]||(t.replace(/^Px/,'').replace(/^C(?=[A-Z])/,''));}
-
-const JF_SCALE=1.15,JF_W=160,JF_H=56;
-let jfTx={x:40,y:40},jfSc=1,jfPanning=false,jfPs={x:0,y:0};
-let jfCurrentFlow=null;
-const jfWrap=$('jf-wrap');
-const jfCanvas=$('jf-canvas');
-
-function jfApplyT(){
-  jfCanvas.style.transform=`translate(${jfTx.x}px,${jfTx.y}px) scale(${jfSc})`;
-}
 
 function openJobFlow(){
-  if(!currentDetailNode||!currentDetailNode.job_flow) return;
-  const flow=currentDetailNode.job_flow;
-  if(!flow.stages.length) return;
-  jfCurrentFlow=flow;
+  if(!currentDetailNode||!currentDetailNode.job_flow_file) return;
   $('jf-title').textContent=`Job Flow — ${currentDetailNode.jobname||currentDetailNode.name}`;
+  $('jf-iframe').src=currentDetailNode.job_flow_file;
   $('jf-modal').classList.add('open');
-  renderJobFlow(flow);
-  setTimeout(jfFit,80);
 }
 
 function closeJobFlow(){
   $('jf-modal').classList.remove('open');
-  jfCurrentFlow=null;
-  while(jfCanvas.firstChild) jfCanvas.removeChild(jfCanvas.firstChild);
-  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.id='jf-lines';
-  jfCanvas.appendChild(svg);
+  $('jf-iframe').src='';
 }
 
-function renderJobFlow(flow){
-  while(jfCanvas.firstChild) jfCanvas.removeChild(jfCanvas.firstChild);
-
-  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.id='jf-lines';
-  svg.style.cssText='position:absolute;top:0;left:0;pointer-events:none;overflow:visible;';
-  jfCanvas.appendChild(svg);
-
-  // Pijl-marker
-  svg.innerHTML=`<defs><marker id="jf-arr" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
-    <path d="M0,0 L0,6 L7,3 z" fill="#0969da" opacity=".7"/></marker></defs>`;
-
-  const stageMap={};
-  flow.stages.forEach(s=>{
-    stageMap[s.id]=s;
-    const div=document.createElement('div');
-    div.className='jf-stage';
-    div.style.left=(s.x*JF_SCALE)+'px';
-    div.style.top =(s.y*JF_SCALE)+'px';
-    const col=stCol(s.type);
-    div.innerHTML=`<span class="jf-type-badge" style="background:${col}">${esc(stLbl(s.type))}</span>
-      <div class="jf-stage-name">${esc(s.name)}</div>`;
-    jfCanvas.appendChild(div);
-  });
-
-  // SVG verbindingen
-  flow.links.forEach(l=>{
-    const src=stageMap[l.src],tgt=stageMap[l.tgt];
-    if(!src||!tgt) return;
-    const x1=src.x*JF_SCALE+JF_W, y1=src.y*JF_SCALE+JF_H/2;
-    const x2=tgt.x*JF_SCALE,      y2=tgt.y*JF_SCALE+JF_H/2;
-    const cx=(x1+x2)/2;
-    const path=document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d',`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`);
-    path.setAttribute('fill','none');
-    path.setAttribute('stroke','#0969da');
-    path.setAttribute('stroke-width','1.5');
-    path.setAttribute('opacity','.5');
-    path.setAttribute('marker-end','url(#jf-arr)');
-    svg.appendChild(path);
-    if(l.name){
-      const mx=(x1+x2)/2,my=(y1+y2)/2-5;
-      const txt=document.createElementNS('http://www.w3.org/2000/svg','text');
-      txt.setAttribute('x',mx); txt.setAttribute('y',my);
-      txt.setAttribute('text-anchor','middle');
-      txt.setAttribute('font-size','8');
-      txt.setAttribute('font-family','monospace');
-      txt.setAttribute('fill','#656d76');
-      txt.textContent=l.name.length>22?l.name.slice(0,20)+'…':l.name;
-      svg.appendChild(txt);
-    }
-  });
-}
-
-function jfFit(){
-  if(!jfCurrentFlow||!jfCurrentFlow.stages.length) return;
-  const st=jfCurrentFlow.stages;
-  const minX=Math.min(...st.map(s=>s.x*JF_SCALE));
-  const maxX=Math.max(...st.map(s=>s.x*JF_SCALE+JF_W+20));
-  const minY=Math.min(...st.map(s=>s.y*JF_SCALE));
-  const maxY=Math.max(...st.map(s=>s.y*JF_SCALE+JF_H+20));
-  const pad=50,ww=jfWrap.clientWidth,wh=jfWrap.clientHeight;
-  jfSc=Math.min((ww-pad*2)/(maxX-minX||1),(wh-pad*2)/(maxY-minY||1),1.5);
-  jfTx={x:pad-minX*jfSc+(ww-pad*2-(maxX-minX)*jfSc)/2,
-        y:pad-minY*jfSc+(wh-pad*2-(maxY-minY)*jfSc)/2};
-  jfApplyT();
-}
-
-jfWrap.addEventListener('wheel',e=>{
-  e.preventDefault();
-  const f=e.deltaY<0?1.12:1/1.12;
-  const r=jfWrap.getBoundingClientRect();
-  const mx=e.clientX-r.left,my=e.clientY-r.top;
-  jfTx.x=mx-(mx-jfTx.x)*f; jfTx.y=my-(my-jfTx.y)*f;
-  jfSc=Math.max(.08,Math.min(3,jfSc*f));
-  jfApplyT();
-},{passive:false});
-
-jfWrap.addEventListener('mousedown',e=>{
-  jfPanning=true;
-  jfPs={x:e.clientX-jfTx.x,y:e.clientY-jfTx.y};
-  jfWrap.style.cursor='grabbing';
-});
-window.addEventListener('mousemove',e=>{
-  if(!jfPanning) return;
-  jfTx={x:e.clientX-jfPs.x,y:e.clientY-jfPs.y};
-  jfApplyT();
-});
-window.addEventListener('mouseup',()=>{jfPanning=false;jfWrap.style.cursor='';});
 window.addEventListener('keydown',e=>{if(e.key==='Escape')closeJobFlow();});
 
 buildTabs();
@@ -1076,13 +884,9 @@ if(SEQS.length){currentSeq=SEQS[0];renderFlow(SEQS[0]);}
     <div id="jf-head">
       <span style="font-size:16px;flex-shrink:0">⬡</span>
       <span id="jf-title">Job Flow</span>
-      <button class="jf-btn" onclick="jfFit()">⊡ Fit</button>
       <button class="jf-btn" onclick="closeJobFlow()" style="color:#cf222e">✕ Sluiten</button>
     </div>
-    <div id="jf-wrap">
-      <div id="jf-canvas"><svg id="jf-lines"></svg></div>
-      <div id="jf-infobar">Scroll = zoom · Sleep = pan</div>
-    </div>
+    <iframe id="jf-iframe" src=""></iframe>
   </div>
 </div>
 <script>{js}</script>
@@ -1128,8 +932,10 @@ def _main():
     export_date = _header.get('Date', '?') if _header is not None else _root.get('Date', '?')
     log.info('Export datum: %s', export_date)
 
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
     log.info('Sequencers/jobs parsen...')
-    seqs = parse_all(content)
+    seqs = parse_all(content, export_date, xml_path.stem)
 
     for s in seqs:
         log.info('  %-50s  %d nodes  %d links',
@@ -1137,7 +943,6 @@ def _main():
 
     title       = xml_path.stem.replace('_', ' ').title()
     html_out    = build_html(seqs, title, export_date)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / f'{xml_path.stem}_Flow.html'
     output_path.write_text(html_out, encoding='utf-8')
 

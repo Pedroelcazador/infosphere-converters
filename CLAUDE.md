@@ -90,6 +90,22 @@ Het ERD bevat een **Layout-keuze** in de toolbar (Ster / Hiërarchisch / Grid). 
 
 Bij stermodellen verschijnt ook een **Ster-dropdown**. JS detecteert feitentabellen (naam eindigt op `_FT` of `fkOutCount >= STAR_THRESHOLD=4`) en bouwt een `starMap` (ft_id → Set van parent-ids). Bij selectie worden niet-gerelateerde entiteiten verborgen (`display:none`) en hun SVG-lijnen weggelaten. Layout-wisseling wist het filter.
 
+## ds_flow — job flow per sequencer-node
+
+`ds_flow.py` importeert `ds_job_flow` via `importlib` (zelfde patroon als `ds_convert`). Voor elke parallel job die in de sequencer voorkomt roept het `generate_job_flow_html()` aan:
+- Serialiseert het Job ET-element naar XML-string via `ET.tostring()`
+- Roept `dsj.parse_job(xml_str)` + `dsj.build_html()` aan
+- Schrijft het resultaat naar `output/{xml_stem}_{jobname}_JobFlow.html`
+- Geeft de bestandsnaam terug als `job_flow_file` in het node-dict
+
+In de modal wordt een `<iframe>` getoond met die bestandsnaam als src. Relatieve URL werkt omdat de Flow HTML zelf ook onder `/output/` wordt geserveerd.
+
+Bij mislukking (`SystemExit` of andere exception) logt `generate_job_flow_html()` een waarschuwing en geeft `None` terug — de "Bekijk job flow"-knop verschijnt dan niet.
+
+## XMLProperties — OracleConnectorPX
+
+`get_xmlprops_tree()` in `ds_convert.py` controleert eerst een directe `<Property Name="XMLProperties">` van het Record element (formaat bij OracleConnectorPX), en valt daarna terug op de SubRecord-structuur (oudere CustomStage format). Eerder werd alleen SubRecord gecheckt, wat de "XMLProperties konden niet worden geparsed" melding veroorzaakte.
+
 ## Open verbeterpunten
 
 Zie `to_do.md` voor de volledige lijst. Belangrijkste open punten:

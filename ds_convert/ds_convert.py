@@ -87,7 +87,16 @@ def xprop(tree, *tags):
     return ''
 
 def get_xmlprops_tree(rec_elem):
-    """Haal XMLProperties op uit een CustomStage record en parse als XML tree."""
+    """Haal XMLProperties op uit een Record element en parse als XML tree."""
+    # Directe property (meest voorkomend bij OracleConnectorPX)
+    p = rec_elem.find("Property[@Name='XMLProperties']")
+    if p is not None:
+        raw = html.unescape((p.text or '').strip())
+        try:
+            return ET.fromstring(raw)
+        except ET.ParseError:
+            return None
+    # Fallback: SubRecord-structuur (CustomStage, oudere format)
     for sub in rec_elem.findall('SubRecord'):
         n = sub.find("Property[@Name='Name']")
         if n is None or (n.text or '').strip() != 'XMLProperties':
@@ -95,7 +104,6 @@ def get_xmlprops_tree(rec_elem):
         v = sub.find("Property[@Name='Value']")
         if v is None:
             continue
-        # XMLProperties-waarde is HTML-escaped XML; html.unescape nodig voor CDATA-opgeslagen waarden
         raw = html.unescape((v.text or '').strip())
         try:
             return ET.fromstring(raw)
