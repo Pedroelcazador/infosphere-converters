@@ -238,39 +238,22 @@ def parse_model(root: ET.Element) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Hiërarchische layout berekenen
+# Layout berekenen
 # ---------------------------------------------------------------------------
-def compute_layout(entities: list) -> dict:
-    """
-    Berekent x/y posities via topologische niveaubepaling.
-
-    Niveau 0 = root-entiteiten (geen FK naar andere entiteit)
-    Niveau N = maximale afstand tot een root via FK-keten
-
-    Geeft een dict terug: {entity_name: {'x': int, 'y': int}}
-    """
-    CARD_W  = 240   # breedte van een entiteitskaart (px)
-    CARD_H  = 160   # geschatte hoogte (wordt dynamisch groter bij veel attrs)
-    H_GAP   = 40    # horizontale ruimte tussen kaarten
-    V_GAP   = 80    # verticale ruimte tussen niveaus
+def _hierarchical_layout(entities: list, parents: dict) -> dict:
+    """Hiërarchische fallback-layout op basis van FK-diepte (niveaus)."""
+    CARD_W = 240
+    CARD_H = 160
+    H_GAP  = 40
+    V_GAP  = 80
 
     names = [e['name'] for e in entities]
-
-    # Bouw parent-set per entiteit: welke entiteiten zijn zijn ouder?
-    parents: dict[str, set] = {n: set() for n in names}
-    for e in entities:
-        for fk in e['fks']:
-            p = fk['parent_table']
-            if p in parents and p != e['name']:
-                parents[e['name']].add(p)
-
-    # Topologische niveaubepaling (Kahn-achtig, maar gebaseerd op max-diepte)
     levels: dict[str, int] = {}
 
     def get_level(name: str, visited: set) -> int:
         if name in levels:
             return levels[name]
-        if name in visited:          # circulaire relatie: zet op huidig niveau
+        if name in visited:
             return 0
         visited = visited | {name}
         if not parents[name]:
@@ -283,27 +266,168 @@ def compute_layout(entities: list) -> dict:
     for n in names:
         get_level(n, set())
 
-    # Groepeer per niveau
     level_groups: dict[int, list] = defaultdict(list)
     for n, lvl in levels.items():
         level_groups[lvl].append(n)
-
-    # Sorteer entiteiten binnen een niveau op naam voor consistentie
     for lvl in level_groups:
         level_groups[lvl].sort()
 
-    # Bereken posities
     positions = {}
     for lvl in sorted(level_groups.keys()):
-        group  = level_groups[lvl]
-        n      = len(group)
+        group   = level_groups[lvl]
+        n       = len(group)
         total_w = n * CARD_W + (n - 1) * H_GAP
-        start_x = max(0, -total_w // 2 + 900)   # gecentreerd rond x=900
-
+        start_x = max(0, -total_w // 2 + 900)
         y = lvl * (CARD_H + V_GAP) + 20
         for i, name in enumerate(group):
-            x = start_x + i * (CARD_W + H_GAP)
-            positions[name] = {'x': x, 'y': y}
+            positions[name] = {'x': start_x + i * (CARD_W + H_GAP), 'y': y}
+    return positions
+
+
+def compute_layout(entities: list) -> dict:
+    """
+    Bepaalt x/y-posities voor het ERD.
+
+    Detecteert stermodellen automatisch: entiteiten met ≥4 FK-referenties
+    of een naam die eindigt op '_FT' worden als feitentabel beschouwd.
+    Bij een stermodel staat de feitentabel centraal; dimensies worden in
+    een boog eromheen geplaatst. Gedeelde dimensies komen boven de
+    feitentabellen. Fallback: hiërarchische layout op basis van FK-diepte.
+    """
+    import math
+
+    CARD_W         = 240
+    CARD_H         = 160
+    H_GAP          = 40
+    STAR_THRESHOLD = 4      # min. FK-count om als feitentabel te gelden
+    ARC_HALF_DEG   = 130    # half-boogspan per feitentabel (graden)
+
+    names = [e['name'] for e in entities]
+
+    # ── Ouderrelaties opbouwen ────────────────────────────────────────────────
+    parents: dict[str, set] = {n: set() for n in names}
+    for e in entities:
+        for fk in e['fks']:
+            p = fk['parent_table']
+            if p in parents and p != e['name']:
+                parents[e['name']].add(p)
+
+    fk_count = {n: len(parents[n]) for n in names}
+
+    # ── Feitentabellen detecteren ─────────────────────────────────────────────
+    def is_fact(name: str) -> bool:
+        nu = name.upper().replace(' ', '_')
+        return nu.endswith('_FT') or fk_count[name] >= STAR_THRESHOLD
+
+    fact_tables = sorted(n for n in names if is_fact(n))
+
+    if not fact_tables:
+        return _hierarchical_layout(entities, parents)
+
+    positions: dict[str, dict] = {}
+    placed: set[str]           = set()
+    ft_set                     = set(fact_tables)
+    N_FT                       = len(fact_tables)
+
+    # ── Dimensies categoriseren ───────────────────────────────────────────────
+    dim_to_fts: dict[str, set] = {n: set() for n in names}
+    for ft in fact_tables:
+        for p in parents[ft]:
+            if p in dim_to_fts:
+                dim_to_fts[p].add(ft)
+
+    private_dims: dict[str, list] = {ft: [] for ft in fact_tables}
+    shared_dims: list             = []
+    for n in names:
+        if n in ft_set or not dim_to_fts[n]:
+            continue
+        fts = dim_to_fts[n]
+        if len(fts) == 1:
+            private_dims[next(iter(fts))].append(n)
+        else:
+            shared_dims.append(n)
+
+    # ── Boogparameters en minimale straal per feitentabel ─────────────────────
+    def arc_params(i: int, n_dims: int) -> tuple:
+        """Geeft (arc_mid, arc_half, radius) terug in radialen/pixels."""
+        if N_FT == 1:
+            arc_mid  = math.pi / 2    # gecentreerd naar boven
+            arc_half = math.pi        # volledige cirkel
+        elif i == 0:                  # meest linkse feitentabel
+            arc_mid  = math.pi        # gecentreerd naar links
+            arc_half = math.radians(ARC_HALF_DEG)
+        elif i == N_FT - 1:           # meest rechtse feitentabel
+            arc_mid  = 0.0            # gecentreerd naar rechts
+            arc_half = math.radians(ARC_HALF_DEG)
+        else:                         # middelste feitentabel(len)
+            arc_mid  = math.pi / 2
+            arc_half = math.pi
+        arc_span   = 2 * arc_half
+        min_radius = math.ceil(max(1, n_dims) * (CARD_W + H_GAP) / arc_span)
+        return arc_mid, arc_half, max(420, min_radius)
+
+    max_radius = max(
+        arc_params(i, len(private_dims[ft]))[2]
+        for i, ft in enumerate(fact_tables)
+    )
+
+    # ── Feitentabellen naast elkaar plaatsen ──────────────────────────────────
+    # Horizontale afstand: voorkom dat bogen van aangrenzende FTs overlappen.
+    # cos(ARC_HALF_DEG) geeft de x-uitstrekking van de booggrens relatief aan FT.
+    cos_inner    = abs(math.cos(math.radians(ARC_HALF_DEG)))
+    FACT_SPACING = max(1200, int(2 * max_radius * cos_inner + CARD_W + 200))
+    fact_cy      = max_radius + CARD_H + 120   # ruimte boven voor omhoogstaande dims
+
+    ft_pos: dict[str, tuple] = {}
+    for i, ft in enumerate(fact_tables):
+        x = int(900 + (i - (N_FT - 1) / 2) * FACT_SPACING)
+        positions[ft] = {'x': x, 'y': fact_cy}
+        ft_pos[ft]    = (x, fact_cy)
+        placed.add(ft)
+
+    # ── Privé-dimensies in een boog per feitentabel plaatsen ──────────────────
+    for i, ft in enumerate(fact_tables):
+        ft_x, ft_y = ft_pos[ft]
+        dims = sorted(private_dims[ft])
+        n    = len(dims)
+        if n == 0:
+            continue
+        arc_mid, arc_half, radius = arc_params(i, n)
+        arc_start = arc_mid - arc_half
+        arc_span  = 2 * arc_half
+        for j, dim in enumerate(dims):
+            if dim in placed:
+                continue
+            angle = arc_start + (j + 0.5) / n * arc_span
+            # HTML-y is omgekeerd t.o.v. wiskundige y-as
+            x = ft_x + radius * math.cos(angle) - CARD_W / 2
+            y = ft_y - radius * math.sin(angle) - CARD_H / 2
+            positions[dim] = {'x': max(20, int(x)), 'y': max(60, int(y))}
+            placed.add(dim)
+
+    # ── Gedeelde dimensies boven het midden ───────────────────────────────────
+    shared_dims.sort()
+    if shared_dims:
+        all_ft_x = [ft_pos[ft][0] for ft in fact_tables]
+        cx       = (min(all_ft_x) + max(all_ft_x)) / 2
+        total_w  = len(shared_dims) * (CARD_W + H_GAP) - H_GAP
+        sx       = cx - total_w / 2
+        sy       = max(60, fact_cy - max_radius - CARD_H - 60)
+        for j, dim in enumerate(shared_dims):
+            if dim not in placed:
+                positions[dim] = {
+                    'x': max(20, int(sx + j * (CARD_W + H_GAP))),
+                    'y': int(sy),
+                }
+                placed.add(dim)
+
+    # ── Overige entiteiten onderaan ───────────────────────────────────────────
+    remaining = sorted(n for n in names if n not in placed)
+    for j, n in enumerate(remaining):
+        positions[n] = {
+            'x': max(0, 50 + j * (CARD_W + H_GAP)),
+            'y': fact_cy + max_radius + 100,
+        }
 
     return positions
 
