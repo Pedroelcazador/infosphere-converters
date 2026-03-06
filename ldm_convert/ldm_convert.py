@@ -458,8 +458,14 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
   #toolbar h1 {{ font-size:13px; color:#cce0f5; flex:1; font-weight:400; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
   #toolbar h1 strong {{ color:#fff; font-weight:700; }}
   /* ── Attribuutmodus-knoppen ── */
-  #attr-mode-group, #layout-group {{ display:flex; gap:4px; align-items:center; border-left:1px solid rgba(255,255,255,0.2); padding-left:10px; flex-shrink:0; }}
-  #attr-mode-group span, #layout-group span {{ font-size:10px; color:#a8cce8; margin-right:2px; white-space:nowrap; }}
+  #attr-mode-group, #layout-group, #star-filter-group {{ display:flex; gap:4px; align-items:center; border-left:1px solid rgba(255,255,255,0.2); padding-left:10px; flex-shrink:0; }}
+  #attr-mode-group span, #layout-group span, #star-filter-group span {{ font-size:10px; color:#a8cce8; margin-right:2px; white-space:nowrap; }}
+  #star-select {{
+    background:rgba(255,255,255,0.12); border:1.5px solid rgba(255,255,255,0.3);
+    color:#fff; border-radius:4px; padding:3px 6px;
+    font-size:11px; font-family:inherit; font-weight:600; cursor:pointer; max-width:210px;
+  }}
+  #star-select option {{ background:#003a6e; color:#fff; }}
   .mode-btn {{
     padding:4px 9px; border-radius:4px; border:1.5px solid rgba(255,255,255,0.3);
     background:rgba(255,255,255,0.08); color:rgba(255,255,255,0.7); cursor:pointer;
@@ -617,6 +623,12 @@ ERD_TEMPLATE = r"""<!DOCTYPE html>
     <button class="mode-btn"        data-layout="hier" onclick="setLayout('hier')" title="Hiërarchisch: niveaus op basis van FK-diepte">Hiërarchisch</button>
     <button class="mode-btn"        data-layout="grid" onclick="setLayout('grid')" title="Grid: entiteiten gesorteerd in rijen en kolommen">Grid</button>
   </div>
+  <div id="star-filter-group" style="display:none">
+    <span>Ster:</span>
+    <select id="star-select" onchange="setStarFilter(this.value||null)" title="Toon alleen de geselecteerde ster">
+      <option value="">Alle sterren</option>
+    </select>
+  </div>
   <div id="legend">
     <div class="leg"><div class="leg-solid"></div><span>Non-identifying</span></div>
     <div class="leg"><div class="leg-dashed"></div><span>Identifying</span></div>
@@ -657,6 +669,56 @@ LAYOUTS.grid = (function() {{
 }})();
 const BASE_KEY    = 'erd_{model_key}';
 let currentLayout = 'star';
+
+// ── Stermodel: feitentabellen detecteren ───────────────────────────────────
+const STAR_THRESHOLD = 4;
+const fkOutCount = {{}};   // hoeveel FKs heeft entity e (als child)?
+ENTITIES.forEach(e => {{ fkOutCount[e.id] = 0; }});
+RELS.forEach(r => {{ fkOutCount[r.c] = (fkOutCount[r.c]||0) + 1; }});
+
+const factEntities = ENTITIES.filter(e =>
+  fkOutCount[e.id] >= STAR_THRESHOLD ||
+  e.name.toUpperCase().replace(/ /g,'_').endsWith('_FT')
+);
+
+// starMap: ft_id → Set van parent-ids die bij die ster horen
+const starMap = {{}};
+factEntities.forEach(ft => {{
+  starMap[ft.id] = new Set(RELS.filter(r => r.c === ft.id).map(r => r.p));
+}});
+
+let activeStarFilter = null;
+
+function setStarFilter(ftId) {{
+  activeStarFilter = ftId || null;
+  ENTITIES.forEach(e => {{
+    const el = document.getElementById('ent_' + e.id);
+    if (!el) return;
+    if (!activeStarFilter) {{
+      el.style.display = '';
+    }} else {{
+      el.style.display = (e.id === activeStarFilter || starMap[activeStarFilter]?.has(e.id))
+        ? '' : 'none';
+    }}
+  }});
+  draw(); drawMinimap();
+  setTimeout(fitView, 50);
+}}
+
+// Dropdown vullen en tonen als er feitentabellen zijn
+(function() {{
+  if (!factEntities.length) return;
+  const sel = document.getElementById('star-select');
+  factEntities
+    .slice().sort((a,b) => a.name.localeCompare(b.name))
+    .forEach(ft => {{
+      const opt = document.createElement('option');
+      opt.value = ft.id;
+      opt.textContent = ft.name;
+      sel.appendChild(opt);
+    }});
+  document.getElementById('star-filter-group').style.display = 'flex';
+}})();
 
 // ── State ──────────────────────────────────────────────────────────────────
 let pos      = {{}};
@@ -919,9 +981,17 @@ function draw() {{
 
   RELS.forEach((r, i) => {{
     const key  = `r${{i}}`;
+    const g    = ensureSvgGroup(key);
+
+    // Lijn verbergen als een van de betrokken entiteiten verborgen is
+    const pe = document.getElementById('ent_'+r.p);
+    const ce = document.getElementById('ent_'+r.c);
+    if (pe?.style.display==='none' || ce?.style.display==='none') {{
+      g.style.display='none'; return;
+    }}
+
     const p1   = edgePt(r.p, r.c);
     const p2   = edgePt(r.c, r.p);
-    const g    = ensureSvgGroup(key);
 
     if (!p1 || !p2) {{ g.style.display='none'; return; }}
     g.style.display = '';
@@ -1037,6 +1107,11 @@ function resetLayout() {{
 function setLayout(name) {{
   if (!LAYOUTS[name] || name === currentLayout) return;
   currentLayout = name;
+  // Sterfilter wissen zodat verborgen entiteiten weer zichtbaar worden
+  activeStarFilter = null;
+  const sel = document.getElementById('star-select');
+  if (sel) sel.value = '';
+  ENTITIES.forEach(e => {{ const el = document.getElementById('ent_'+e.id); if(el) el.style.display=''; }});
   const newPos  = loadPos(name);
   // Animeer de overgang
   ENTITIES.forEach(e => document.getElementById('ent_' + e.id)?.classList.add('layout-anim'));
