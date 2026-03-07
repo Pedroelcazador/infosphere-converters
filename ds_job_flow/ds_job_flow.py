@@ -15,6 +15,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR   = SCRIPT_DIR.parent
+INPUT_DIR  = ROOT_DIR / 'input'
 OUTPUT_DIR = ROOT_DIR / 'output'
 LOG_FILE   = SCRIPT_DIR / 'ds_job_flow.log'
 
@@ -117,7 +118,7 @@ def parse_agg_props(body):
 # ── Bestand vinden ─────────────────────────────────────────────────────────────
 
 def find_xml_file():
-    files = list((ROOT_DIR / 'input').glob('*.xml'))
+    files = list(INPUT_DIR.glob('*.xml'))
     if len(files) == 0:
         log.error('Geen XML-bestand gevonden in input/')
         sys.exit(1)

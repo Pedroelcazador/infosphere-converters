@@ -457,7 +457,7 @@ class TestDsJobFlow(unittest.TestCase):
         # ds_job_flow gebruikt ROOT_DIR / 'input' (geen aparte INPUT_DIR module-variabele).
         # ROOT_DIR overschrijven zodat ROOT_DIR / 'input' naar de tempmap wijst.
         self.mod = _load_module(ROOT / 'ds_job_flow' / 'ds_job_flow.py', 'ds_job_flow')
-        self.mod.ROOT_DIR   = self.root
+        self.mod.INPUT_DIR  = self.inp
         self.mod.OUTPUT_DIR = self.out
 
     def tearDown(self):
