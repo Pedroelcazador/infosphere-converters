@@ -13,14 +13,22 @@ Velden per converter:
   output_suffix : suffix van het HTML-outputbestand voor de web GUI
 """
 
+import sys as _sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent
 
+# In een bevroren EXE staan de converter-scripts als data-bestanden in _MEIPASS.
+# Voor paden naar de scripts gebruiken we _BASE; voor input/output ROOT_DIR.
+if getattr(_sys, 'frozen', False):
+    _BASE = Path(_sys._MEIPASS)
+else:
+    _BASE = ROOT_DIR
+
 REGISTRY = [
     {
         'name':          'ds_convert',
-        'script':        ROOT_DIR / 'ds_convert'  / 'ds_convert.py',
+        'script':        _BASE / 'ds_convert'  / 'ds_convert.py',
         'menu_label':    'DataStage → Documentatie (Markdown + HTML)',
         'file_type':     'dsexport',
         'tab_label':     'Documentatie',
@@ -28,7 +36,7 @@ REGISTRY = [
     },
     {
         'name':          'ds_flow',
-        'script':        ROOT_DIR / 'ds_flow'     / 'ds_flow.py',
+        'script':        _BASE / 'ds_flow'     / 'ds_flow.py',
         'menu_label':    'DataStage → Sequencer flowdiagram (HTML)',
         'file_type':     'dsexport',
         'tab_label':     'Flow',
@@ -36,7 +44,7 @@ REGISTRY = [
     },
     {
         'name':          'ds_job_flow',
-        'script':        ROOT_DIR / 'ds_job_flow' / 'ds_job_flow.py',
+        'script':        _BASE / 'ds_job_flow' / 'ds_job_flow.py',
         'menu_label':    'DataStage → Job dataflow diagram (HTML)',
         'file_type':     'dsexport',
         'tab_label':     'Job Flow',
@@ -44,7 +52,7 @@ REGISTRY = [
     },
     {
         'name':          'ldm_convert',
-        'script':        ROOT_DIR / 'ldm_convert' / 'ldm_convert.py',
+        'script':        _BASE / 'ldm_convert' / 'ldm_convert.py',
         'menu_label':    'LDM → Datamodel (Markdown + HTML + ERD)',
         'file_type':     'ldm',
         'tab_label':     'ERD',
@@ -60,7 +68,7 @@ REGISTRY = [
     },
     {
         'name':          'dbm_convert',
-        'script':        ROOT_DIR / 'dbm_convert' / 'dbm_convert.py',
+        'script':        _BASE / 'dbm_convert' / 'dbm_convert.py',
         'menu_label':    'DBM → Datamodel (Markdown + HTML + ERD)',
         'file_type':     'dbm',
         'tab_label':     'ERD',
@@ -76,7 +84,7 @@ REGISTRY = [
     },
     {
         'name':          'msl_convert',
-        'script':        ROOT_DIR / 'msl_convert' / 'msl_convert.py',
+        'script':        _BASE / 'msl_convert' / 'msl_convert.py',
         'menu_label':    'MSL → Attribuutmapping (Markdown + HTML)',
         'file_type':     'msl',
         'tab_label':     'Mapping',
@@ -84,7 +92,7 @@ REGISTRY = [
     },
     {
         'name':          'msl_lineage',
-        'script':        ROOT_DIR / 'msl_lineage' / 'msl_lineage.py',
+        'script':        _BASE / 'msl_lineage' / 'msl_lineage.py',
         'menu_label':    'MSL → Lineage diagram (HTML)',
         'file_type':     'msl',
         'tab_label':     'Lineage',

@@ -23,14 +23,22 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, unquote
 
-ROOT_DIR   = Path(__file__).resolve().parent
+import sys as _sys
+if getattr(_sys, 'frozen', False):
+    # Bevroren EXE: input/output naast de EXE (schrijfbaar); scripts in _MEIPASS
+    ROOT_DIR    = Path(_sys.executable).resolve().parent
+    _BUNDLE_DIR = Path(_sys._MEIPASS)
+else:
+    ROOT_DIR    = Path(__file__).resolve().parent
+    _BUNDLE_DIR = ROOT_DIR
+
 INPUT_DIR  = ROOT_DIR / 'input'
 OUTPUT_DIR = ROOT_DIR / 'output'
 PORT       = 8080
 MAX_PORT   = 8099  # zoekbereik: 8080–8099
 MAX_UPLOAD = 50 * 1024 * 1024  # 50 MB
 
-sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(_BUNDLE_DIR))
 
 # ---------------------------------------------------------------------------
 # Converter-registry — afgeleid uit converters.py
@@ -203,7 +211,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", UI_HTML.encode("utf-8"))
         elif path == "/readme":
-            readme = ROOT_DIR / "README.md"
+            readme = _BUNDLE_DIR / "README.md"
             if not readme.exists():
                 self._send(404, "text/plain", b"README.md niet gevonden")
                 return
@@ -284,7 +292,7 @@ class Handler(BaseHTTPRequestHandler):
 # UI HTML
 # ---------------------------------------------------------------------------
 from version import VERSION as _VERSION
-UI_HTML = (ROOT_DIR / 'web_ui_template.html').read_text(encoding='utf-8').replace('{{VERSION}}', _VERSION)
+UI_HTML = (_BUNDLE_DIR / 'web_ui_template.html').read_text(encoding='utf-8').replace('{{VERSION}}', _VERSION)
 
 
 # ---------------------------------------------------------------------------
