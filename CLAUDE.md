@@ -29,8 +29,9 @@ infosphere-converters/
   main.py                 # CLI-menu
   md_to_html.py           # Gedeelde module: Markdown → gestylde HTML
   start.bat               # Windows starter (pythonw, geen console)
-  build_zip.py            # Bouwt distribueerbare ZIP (versienaam via version.py)
+  build_zip.py            # Bouwt distribueerbare ZIP naar dist/ (versienaam via version.py)
   build_zip.bat           # Windows wrapper voor build_zip.py (dubbelklik)
+  dist/                   # Distributie-ZIPs (niet in git)
   input/                  # Één inputbestand tegelijk
   output/                 # Gegenereerde HTML/MD bestanden
   ds_convert/ds_convert.py

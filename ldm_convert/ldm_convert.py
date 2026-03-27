@@ -256,7 +256,7 @@ def _hierarchical_layout(entities: list, parents: dict) -> dict:
         if name in visited:
             return 0
         visited = visited | {name}
-        if not parents[name]:
+        if not parents.get(name):
             levels[name] = 0
             return 0
         lvl = max(get_level(p, visited) for p in parents[name]) + 1

@@ -85,7 +85,9 @@ def main() -> None:
     sys.path.insert(0, str(ROOT))
     from version import VERSION
 
-    output_path = ROOT / f"infosphere-converters-{VERSION}.zip"
+    dist_dir = ROOT / "dist"
+    dist_dir.mkdir(exist_ok=True)
+    output_path = dist_dir / f"infosphere-converters-{VERSION}.zip"
 
     if output_path.exists():
         output_path.unlink()

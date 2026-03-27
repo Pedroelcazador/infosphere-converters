@@ -205,7 +205,7 @@ Om een schone ZIP te maken voor distributie (bijv. om door te sturen naar colleg
 python build_zip.py
 ```
 
-Dit genereert `infosphere-converters-<versie>.zip` in de projectroot. De ZIP bevat alleen de bestanden die eindgebruikers nodig hebben — geen ontwikkelbestanden, logbestanden of versiebeheermap. De naam van de ZIP bevat automatisch het huidige versienummer (bijv. `infosphere-converters-20260326v1.zip`).
+Dit genereert `infosphere-converters-<versie>.zip` in de map `dist/`. De ZIP bevat alleen de bestanden die eindgebruikers nodig hebben — geen ontwikkelbestanden, logbestanden of versiebeheermap. De naam van de ZIP bevat automatisch het huidige versienummer (bijv. `infosphere-converters-20260327v1.zip`). De `dist/` map staat niet in versiebeheer.
 
 ---
 
@@ -219,6 +219,7 @@ infosphere-converters/
   main.py              ← optioneel commandoregelinterface
   md_to_html.py        ← gedeelde module (Markdown → HTML)
   README.md            ← deze documentatie
+  dist/                ← distributie-ZIPs (niet in git)
   input/               ← plaats hier het te converteren bestand
   output/              ← alle gegenereerde bestanden
   ds_convert/
