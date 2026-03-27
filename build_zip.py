@@ -31,6 +31,7 @@ CONVERTER_DIRS = [
     "ds_convert",
     "ds_flow",
     "ds_job_flow",
+    "ds_docs",
     "ldm_convert",
     "dbm_convert",
     "msl_convert",
