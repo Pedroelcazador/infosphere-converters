@@ -214,3 +214,6 @@ dist/
 input/*
 output/*
 tasks/*
+
+# Tijdelijke werkbestanden (instructies, AI-communicatie)
+temp/

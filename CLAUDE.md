@@ -136,3 +136,12 @@ Output: `output/{xml_stem}_docs.zip` (flat, geen subdirectory in ZIP).
 Zie `to_do.md` voor de volledige lijst. Belangrijkste open punten:
 - Globale state-mutatie `logging.root.handlers` in `web_ui.py` (niet thread-safe)
 - DataStage Linter (`ds_linter`) nog te implementeren
+
+## Tijdelijke werkbestanden (`temp/`)
+
+Instructiedocumenten voor externe AI-modellen (bijv. Gemini-prompts, taakbeschrijvingen) en terugkoppeling daarvan worden opgeslagen in de tijdelijke werkmap van het project. In dit project is dat `temp/`.
+
+- Instructies naar AG/Gemini: `<tempdir>/<naam>_instructie.md`
+- Terugkoppeling / output van AG: `<tempdir>/<naam>_output.md`
+- De map staat in `.gitignore` en wordt nooit meegenomen in git
+- De naam van de map kan per project verschillen (`temp/`, `TEMP/`, `tmp/`, e.d.) — controleer `.gitignore` of vraag de gebruiker als het niet duidelijk is
