@@ -36,6 +36,7 @@ infosphere-converters/
   ds_convert/ds_convert.py
   ds_flow/ds_flow.py
   ds_job_flow/ds_job_flow.py
+  ds_docs/ds_docs.py
   ldm_convert/ldm_convert.py
   dbm_convert/dbm_convert.py
   msl_convert/msl_convert.py
@@ -113,6 +114,17 @@ Bij stermodellen verschijnt ook een **Ster-dropdown**. JS detecteert feitentabel
 In de modal wordt een `<iframe>` getoond met die bestandsnaam als src. Relatieve URL werkt omdat de Flow HTML zelf ook onder `/output/` wordt geserveerd.
 
 Bij mislukking (`SystemExit` of andere exception) logt `generate_job_flow_html()` een waarschuwing en geeft `None` terug — de "Bekijk job flow"-knop verschijnt dan niet.
+
+
+## ds_docs — gesplitste documentatie per job (ZIP voor LLM/chatbot)
+
+`ds_docs.py` laadt `ds_convert` via `importlib` (zelfde patroon als `ds_flow`). Per job roept het de render-functies aan uit `ds_convert`:
+- `render_sequencer_job()` / `render_parallel_job()` / `render_container()`
+- Schrijft elk resultaat als losse entry in een ZIP via `zipfile.ZipFile` (standaardbibliotheek)
+- Voegt `index.md` toe met een tabel van alle jobs + uitvoeringsvolgorde per sequencer
+- Schrijft ook `{xml_stem}_Docs.html` als landing page zodat de web_ui een "Docs"-tab kan tonen
+
+Output: `output/{xml_stem}_docs.zip` (flat, geen subdirectory in ZIP).
 
 ## XMLProperties — OracleConnectorPX
 
