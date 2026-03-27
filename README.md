@@ -194,6 +194,21 @@ Interactief data-lineage diagram:
 
 ---
 
+## Distributie-ZIP bouwen
+
+Om een schone ZIP te maken voor distributie (bijv. om door te sturen naar collega's):
+
+**Windows:** dubbelklik op `build_zip.bat`
+
+**Command line:**
+```bash
+python build_zip.py
+```
+
+Dit genereert `infosphere-converters-<versie>.zip` in de projectroot. De ZIP bevat alleen de bestanden die eindgebruikers nodig hebben — geen ontwikkelbestanden, logbestanden of versiebeheermap. De naam van de ZIP bevat automatisch het huidige versienummer (bijv. `infosphere-converters-20260326v1.zip`).
+
+---
+
 ## Mappenstructuur
 
 ```

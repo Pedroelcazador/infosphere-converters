@@ -838,7 +838,7 @@ function renderAttrs(container, e) {{
   const metaAttrs = visibleAttrs.filter(a => a.meta);
 
   funcAttrs.forEach(a => container.appendChild(makeAttrRow(a)));
-  if (ATTR_MODE === 'all' && metaAttrs.length) {{
+  if (metaAttrs.length) {{
     const lbl = document.createElement('div');
     lbl.className = 'attr-section-label';
     lbl.textContent = 'DIM / bitemporale velden';
@@ -1326,13 +1326,13 @@ def render_erd(model: dict, all_attrs: bool) -> str:
                 'sk':    a['surrogate'],
                 'meta':  a['dim_meta'],
                 'fk':    any(a['name'] in fk['name'] for fk in e['fks']),
-                'desc':  a['description'][:150] + ('…' if len(a['description']) > 150 else ''),
+                'desc':  a['description'],
             })
         ent_list.append({
             'id':    e['id'],
             'name':  e['name'],
             'label': e['label'],
-            'desc':  e['description'][:200] + ('…' if len(e['description']) > 200 else ''),
+            'desc':  e['description'],
             'attrs': attrs_out,
         })
 
@@ -1436,7 +1436,7 @@ def render_markdown(model: dict) -> str:
             lines.append("| Naam | Datatype | PK | Verplicht | Surrogate | Beschrijving |")
             lines.append("|---|---|:---:|:---:|:---:|---|")
             for a in func_attrs:
-                desc = escape_md(a['description'][:120] + ('…' if len(a['description']) > 120 else ''))
+                desc = escape_md(a['description'])
                 lines.append(
                     f"| **{escape_md(a['name'])}** | `{a['datatype']}` "
                     f"| {'✓' if a['pk'] else ''} "
@@ -1449,12 +1449,14 @@ def render_markdown(model: dict) -> str:
         if meta_attrs:
             lines.append("<details>")
             lines.append("<summary>DIM / bitemporale metadata-velden</summary>\n")
-            lines.append("| Naam | Datatype | Verplicht |")
-            lines.append("|---|---|:---:|")
+            lines.append("| Naam | Datatype | Verplicht | Beschrijving |")
+            lines.append("|---|---|:---:|---|")
             for a in meta_attrs:
+                desc = escape_md(a['description'])
                 lines.append(
                     f"| {escape_md(a['name'])} | `{a['datatype']}` "
-                    f"| {'✓' if a['required'] else ''} |"
+                    f"| {'✓' if a['required'] else ''} "
+                    f"| {desc} |"
                 )
             lines.append("")
             lines.append("</details>\n")

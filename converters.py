@@ -51,6 +51,14 @@ REGISTRY = [
         'output_suffix': '_JobFlow.html',
     },
     {
+        'name':          'ds_docs',
+        'script':        _BASE / 'ds_docs'     / 'ds_docs.py',
+        'menu_label':    'DataStage → Docs per job (ZIP voor LLM/chatbot)',
+        'file_type':     'dsexport',
+        'tab_label':     'Docs',
+        'output_suffix': '_Docs.html',
+    },
+    {
         'name':          'ldm_convert',
         'script':        _BASE / 'ldm_convert' / 'ldm_convert.py',
         'menu_label':    'LDM → Datamodel (Markdown + HTML + ERD)',

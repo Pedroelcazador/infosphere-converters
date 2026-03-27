@@ -18,6 +18,7 @@ Ondersteunde bestandstypen: DSExport XML (DataStage), LDM XML (logisch datamodel
 - **Windows**: `start.bat` (dubbelklik, geen terminalvenster)
 - **Server**: `python3 web_ui.py` → http://localhost:8080
 - **CLI**: `python3 main.py`
+- **Distributie-ZIP bouwen**: `python3 build_zip.py` (of dubbelklik `build_zip.bat` op Windows)
 
 ## Mapstructuur
 
@@ -28,6 +29,8 @@ infosphere-converters/
   main.py                 # CLI-menu
   md_to_html.py           # Gedeelde module: Markdown → gestylde HTML
   start.bat               # Windows starter (pythonw, geen console)
+  build_zip.py            # Bouwt distribueerbare ZIP (versienaam via version.py)
+  build_zip.bat           # Windows wrapper voor build_zip.py (dubbelklik)
   input/                  # Één inputbestand tegelijk
   output/                 # Gegenereerde HTML/MD bestanden
   ds_convert/ds_convert.py
