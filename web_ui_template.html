@@ -5,33 +5,34 @@
 <title>Infosphere Converters</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 #hdr{background:#005b9a;padding:0 20px;height:52px;display:flex;align-items:center;gap:14px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.2)}
 #logo{font-size:17px;font-weight:700;background:#fff;color:#005b9a;padding:2px 9px;border-radius:3px}
 #hdr h1{font-size:14px;font-weight:400;color:#cce0f5}
 #hdr h1 strong{color:#fff;font-weight:700}
-#version{font-size:10px;color:rgba(255,255,255,.45);font-family:'Courier New',monospace;margin-left:6px}
-#hdr-status{margin-left:auto;font-size:11px;color:rgba(255,255,255,.6)}
+#version{font-size:10px;color:rgba(255,255,255,.65);font-family:'Courier New',monospace;margin-left:6px}
+#hdr-status{margin-left:auto;font-size:11px;color:rgba(255,255,255,.85)}
 .hbtn{padding:5px 11px;border-radius:4px;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .hbtn:hover{background:rgba(255,255,255,.22)}
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:16px;gap:12px}
-#drop-area{border:2.5px dashed #a0b8d0;border-radius:8px;background:#fff;text-align:center;padding:28px 20px;cursor:pointer;transition:border-color .2s,background .2s;flex-shrink:0;position:relative}
-#drop-area.dragover{border-color:#005b9a;background:#e8f2fb}
+#drop-area{border:2px dashed #b8cfe0;border-radius:12px;background:linear-gradient(135deg,#ffffff 0%,#f5f9fd 100%);text-align:center;padding:28px 20px;cursor:pointer;transition:border-color .2s,background .2s,box-shadow .2s;flex-shrink:0;position:relative}
+#drop-area:hover{border-color:#005b9a;background:#e8f2fb;box-shadow:0 0 0 4px rgba(0,91,154,.08)}
+#drop-area.dragover{border-color:#005b9a;background:#e8f2fb;box-shadow:0 0 0 4px rgba(0,91,154,.08)}
 #drop-area.loading{border-color:#005b9a;background:#f0f7ff;cursor:wait}
-#drop-icon{font-size:36px;line-height:1;margin-bottom:8px}
+#drop-icon{line-height:1;margin-bottom:8px;display:flex;justify-content:center}
 #drop-text{font-size:14px;color:#4a6a8a}
 #drop-text strong{color:#005b9a}
-#drop-sub{font-size:11px;color:#8899aa;margin-top:5px}
+#drop-sub{font-size:11px;color:#667788;margin-top:5px}
 #file-input{display:none}
 #spinner{display:none;position:absolute;inset:0;background:rgba(240,247,255,.9);border-radius:6px;align-items:center;justify-content:center;flex-direction:column;gap:10px;font-size:13px;color:#005b9a}
 #drop-area.loading #spinner{display:flex}
 .spin{width:32px;height:32px;border:3px solid #c0d8f0;border-top-color:#005b9a;border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-#err-bar{display:none;background:#fef0f0;border:1px solid #f0b0b0;border-radius:6px;padding:10px 14px;font-size:12px;color:#c03030;flex-shrink:0}
+#err-bar{display:none;background:#fef0f0;border:1px solid #f0b0b0;border-left:4px solid #c03030;border-radius:0 6px 6px 0;padding:10px 14px;font-size:12px;color:#c03030;flex-shrink:0}
 #out-section{flex:1;display:flex;flex-direction:column;background:#fff;border-radius:8px;border:1px solid #c8d8e8;overflow:hidden;min-height:0}
 #out-section.hidden{display:none}
 #tab-bar{display:flex;align-items:stretch;background:#f0f7ff;border-bottom:1px solid #c8d8e8;padding:0 12px;gap:2px;flex-shrink:0}
-.tab{padding:9px 16px;font-size:12px;font-weight:600;color:#4a6a8a;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;white-space:nowrap;transition:color .15s}
+.tab{padding:9px 16px;font-size:12px;font-weight:600;color:#4a6a8a;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;white-space:nowrap;transition:color .15s,border-bottom-color .15s}
 .tab:hover{color:#005b9a}
 .tab.active{color:#005b9a;border-bottom-color:#005b9a}
 #tab-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
@@ -42,7 +43,7 @@ body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;
 #frame-wrap{flex:1;position:relative;min-height:0}
 #frame{width:100%;height:100%;border:none;display:block}
 #welcome{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#8899aa;font-size:13px;pointer-events:none}
-#welcome-icon{font-size:40px}
+#welcome-icon{display:flex}
 #log-sec{flex-shrink:0;background:#1c2c3c;border-radius:8px;overflow:hidden;max-height:140px;display:flex;flex-direction:column}
 #log-sec.hidden{display:none}
 #log-hdr{display:flex;align-items:center;padding:5px 12px;background:#142030;cursor:pointer;user-select:none;gap:8px}
@@ -60,12 +61,12 @@ body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;
   <div id="logo">UWV</div>
   <h1><strong>Infosphere Converters</strong> — Web Interface <span id="version">{{VERSION}}</span></h1>
   <span id="hdr-status">Klaar</span>
-  <button class="hbtn" onclick="resetSession()" title="Verwijder inputbestanden voor een nieuwe sessie">🗑 Nieuwe sessie</button>
+  <button class="hbtn" onclick="resetSession()" title="Verwijder inputbestanden voor een nieuwe sessie"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>Nieuwe sessie</button>
   <button class="hbtn" onclick="window.open('/readme','_blank')" title="Documentatie">? Help</button>
 </div>
 <div id="main">
   <div id="drop-area" onclick="document.getElementById('file-input').click()">
-    <div id="drop-icon">📂</div>
+    <div id="drop-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#005b9a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
     <div id="drop-text"><strong>Sleep een bestand hiernaartoe</strong> of klik om te kiezen</div>
     <div id="drop-sub">Ondersteund: DataStage DSExport XML · IBM LDM XML · IBM DBM XML · MSL</div>
     <div id="spinner"><div class="spin"></div><span id="spin-txt">Converteren…</span></div>
@@ -75,14 +76,14 @@ body{font-family:Arial,sans-serif;background:#eef2f7;color:#1a2a3a;height:100vh;
   <div id="out-section" class="hidden">
     <div id="tab-bar">
       <div id="tab-actions">
-        <button class="abtn" onclick="openNew()">↗ Nieuw venster</button>
-        <button class="abtn" onclick="dlZip()">📦 Download zip</button>
-        <button class="abtn primary" onclick="dl()">⬇ Opslaan</button>
+        <button class="abtn" onclick="openNew()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Nieuw venster</button>
+        <button class="abtn" onclick="dlZip()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Download zip</button>
+        <button class="abtn primary" onclick="dl()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Opslaan</button>
       </div>
     </div>
     <div id="frame-wrap">
       <iframe id="frame" sandbox="allow-scripts allow-same-origin"></iframe>
-      <div id="welcome"><div id="welcome-icon">📄</div><span>Sleep een bestand om te beginnen</span></div>
+      <div id="welcome"><div id="welcome-icon"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#b8cfe0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><span>Sleep een bestand om te beginnen</span></div>
     </div>
   </div>
   <div id="log-sec" class="hidden">

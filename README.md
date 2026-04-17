@@ -75,10 +75,10 @@ Ondersteunde bestandstypen:
 
 | Knop | Functie |
 |---|---|
-| **↗ Nieuw venster** | Opent het actieve tabblad in een apart browservenster |
-| **📦 Download zip** | Download alle outputbestanden van de huidige sessie als zip |
-| **⬇ Opslaan** | Download het actieve tabblad als losse HTML |
-| **🗑 Nieuwe sessie** | Wist de inputmap zodat een nieuw bestand kan worden geüpload |
+| **Nieuw venster** | Opent het actieve tabblad in een apart browservenster |
+| **Download zip** | Download alle outputbestanden van de huidige sessie als zip |
+| **Opslaan** | Download het actieve tabblad als losse HTML |
+| **Nieuwe sessie** | Wist de inputmap zodat een nieuw bestand kan worden geüpload |
 | **? Help** | Opent deze documentatie in een apart venster |
 
 ### Beperkingen
@@ -206,6 +206,8 @@ python build_zip.py
 ```
 
 Dit genereert `infosphere-converters-<versie>.zip` in de map `dist/`. De ZIP bevat alleen de bestanden die eindgebruikers nodig hebben — geen ontwikkelbestanden, logbestanden of versiebeheermap. De naam van de ZIP bevat automatisch het huidige versienummer (bijv. `infosphere-converters-20260327v1.zip`). De `dist/` map staat niet in versiebeheer.
+
+> **Let op:** `README.md` is verplicht in de distributie-ZIP. De **? Help**-knop in de web UI serveert dit bestand via de `/readme`-route. Zonder dit bestand geeft de Help-knop een 404-fout.
 
 ---
 

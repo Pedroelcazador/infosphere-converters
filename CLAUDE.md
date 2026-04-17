@@ -137,6 +137,21 @@ Zie `to_do.md` voor de volledige lijst. Belangrijkste open punten:
 - Globale state-mutatie `logging.root.handlers` in `web_ui.py` (niet thread-safe)
 - DataStage Linter (`ds_linter`) nog te implementeren
 
+## Distributie-ZIP — verplichte bestanden
+
+`build_zip.py` bouwt de ZIP voor eindgebruikers. De volgende bestanden zijn **verplicht** in de ZIP:
+
+- **`README.md`** — de `? Help`-knop in de web UI serveert dit bestand via de `/readme`-route. Zonder dit bestand geeft de Help-knop een 404-fout bij de eindgebruiker.
+
+Voeg nooit bestanden toe aan de ZIP die alleen voor ontwikkelaars bedoeld zijn (`to_do.md`, `.gitignore`, testbestanden, logbestanden, de `temp/`-map). De `ROOT_FILES`-lijst in `build_zip.py` is de gezaghebbende lijst van wat er in de ZIP terechtkomt.
+
+## UI-conventies (web_ui_template.html)
+
+- **Geen emoji's als iconen.** Gebruik inline SVG (Lucide-stijl: `fill="none"`, `stroke="currentColor"`, `stroke-width="2"`, `stroke-linecap="round"`, `stroke-linejoin="round"`). Emoji's zijn platformafhankelijk, niet stijlbaar en ontoegankelijk.
+- **Font stack.** Gebruik `system-ui, -apple-system, "Segoe UI", Arial, sans-serif` — geen externe fontdownloads (UWV-netwerk heeft beperkte internettoegang).
+- **Kleurcontrasten.** Tekst op de blauwe header (`#005b9a`) minimaal `rgba(255,255,255,.65)` voor klein/decoratief, `.85` voor leesbare statustekst.
+- **Drop zone.** Hover-state via `box-shadow: 0 0 0 4px rgba(0,91,154,.08)` (geen outline, geen border-width-animatie).
+
 ## Tijdelijke werkbestanden (`temp/`)
 
 Instructiedocumenten voor externe AI-modellen (bijv. Gemini-prompts, taakbeschrijvingen) en terugkoppeling daarvan worden opgeslagen in de tijdelijke werkmap van het project. In dit project is dat `temp/`.

@@ -24,6 +24,7 @@ ROOT_FILES = [
     "version.py",
     "start.bat",
     "start.sh",
+    "README.md",  # vereist: de '? Help'-knop in de web UI serveert dit bestand via /readme
 ]
 
 # Converter-mappen: alleen .py en .html bestanden
